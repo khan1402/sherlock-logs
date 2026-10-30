@@ -1,0 +1,41 @@
+# roles/app_deploy - run ONE app container (backend or frontend) from Docker Hub.
+# Replaces Project 2's role-web-server.sh / role-app-server.sh.
+
+# Which version to run?
+#   1. The tag passed in with -e image_tag=...  (Jenkins / rollback)
+#   2. Otherwise: whatever is ALREADY running   (so re-running site.yml never
+#      silently rolls back a version Jenkins deployed)
+#   3. Otherwise (fresh VM): the initial image
+- name: Look at the container that is currently running
+  community.docker.docker_container_info:
+    name: "{{ app_deploy_component }}"
+  register: app_deploy_current
+
+- name: Decide which image tag to run
+  ansible.builtin.set_fact:
+    app_deploy_tag: >-
+      {{ image_tag
+         | default(app_deploy_current.container.Config.Image.split(':') | last
+                   if app_deploy_current.exists else app_initial_tag) }}
+
+# network_mode: host = the container uses the VM's own network, so UFW
+# filters its port like any normal service. (With published ports, Docker
+# writes its own iptables rules and silently BYPASSES UFW.)
+- name: Run the app container - {{ app_deploy_component }}
+  community.docker.docker_container:
+    name: "{{ app_deploy_component }}"
+    image: "{{ app_images[app_deploy_component] }}:{{ app_deploy_tag }}"
+    network_mode: host
+    restart_policy: unless-stopped
+    env: "{{ app_deploy_settings[app_deploy_component].env }}"
+    state: started
+
+# Don't move on to the next server until this one really answers.
+- name: Wait until the container answers its health check - {{ app_deploy_component }}
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ app_deploy_settings[app_deploy_component].port }}/health"
+    status_code: 200
+  register: app_deploy_health
+  until: app_deploy_health.status == 200
+  retries: 15
+  delay: 2

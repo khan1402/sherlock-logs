@@ -1,0 +1,29 @@
+# Default values for the firewall role.
+
+# SSH is allowed only from:
+#   - your laptop (admin_ip) on every VM
+#   - cicd-server on every other VM (Ansible / Jenkins log in from there)
+#   - Vagrant's NAT gateway 10.0.2.2 on cicd-server ONLY. Vagrant runs the
+#     one-click Ansible provisioner through this connection; without this rule,
+#     switching the firewall on would cut the provisioner off mid-run.
+#     (It is only reachable through a port bound to 127.0.0.1 on your laptop,
+#     and sshd still only accepts the devops user with a key.)
+#   - the backup server on every other VM, ONLY when the bonus is enabled
+#     (it pulls backups over SSH with a key locked to one command)
+firewall_vagrant_nat_gateway: 10.0.2.2
+firewall_backup_server_ip: "{{ hostvars[groups['backups'][0]]['ansible_host'] }}"
+
+firewall_ssh_sources: >-
+  {{ [admin_ip]
+     + ([firewall_vagrant_nat_gateway] if inventory_hostname in groups['cicd']
+        else [hostvars[groups['cicd'][0]]['ansible_host']])
+     + ([firewall_backup_server_ip]
+        if (enable_bonus | bool) and inventory_hostname not in groups['backups']
+        else []) }}
+
+# Extra rules per group, set in group_vars/<group>/firewall.yml. Example:
+#   firewall_rules:
+#     - port: 80
+#       sources: ["192.168.56.10"]      # list of IPs, or ["any"]
+#       comment: HTTP from load balancer
+firewall_rules: []

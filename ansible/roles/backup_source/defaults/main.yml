@@ -1,0 +1,4 @@
+# Default values for the backup_source role (bonus).
+
+# Public key of the backup server, read from it earlier in the same run (site.yml).
+backup_source_pubkey: "{{ hostvars[groups['backups'][0]]['backup_server_pubkey'] }}"

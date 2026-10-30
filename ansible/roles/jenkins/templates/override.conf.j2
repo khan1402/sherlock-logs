@@ -1,0 +1,10 @@
+# Managed by Ansible (roles/jenkins).
+# Extends the jenkins.service unit from the Jenkins package.
+[Service]
+# No setup wizard: everything is configured by JCasC instead of clicking.
+Environment="JAVA_OPTS=-Djava.awt.headless=true -Djenkins.install.runSetupWizard=false -Xmx{{ jenkins_heap }}"
+# Where the JCasC plugin finds its configuration.
+Environment="CASC_JENKINS_CONFIG={{ jenkins_home }}/casc.yaml"
+# First start on 1 vCPU can take a few minutes; the default 90 s is too short.
+TimeoutStartSec=600
+

@@ -1,0 +1,41 @@
+# roles/loadbalancer - nginx spreading traffic across the web servers.
+# Replaces Project 2's role-load-balancer.sh.
+
+- name: Install nginx
+  ansible.builtin.apt:
+    name: nginx
+    state: present
+    lock_timeout: 600
+
+- name: Write the load balancer config
+  ansible.builtin.template:
+    src: load-balancer.conf.j2
+    dest: /etc/nginx/sites-available/load-balancer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload nginx
+
+- name: Enable the load balancer site
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/load-balancer
+    dest: /etc/nginx/sites-enabled/load-balancer
+    state: link
+  notify: Reload nginx
+
+- name: Disable nginx's default welcome page
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Reload nginx
+
+# Catch a broken config BEFORE the reload handler runs.
+- name: Check nginx config syntax
+  ansible.builtin.command: nginx -t
+  changed_when: false
+
+- name: Start nginx now and on every boot
+  ansible.builtin.service:
+    name: nginx
+    state: started
+    enabled: true

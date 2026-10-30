@@ -1,0 +1,65 @@
+# GitHub Actions - quick checks in the cloud on every push to GitHub (bonus).
+#
+# Jenkins (on cicd-server) is the real pipeline: it tests, builds, deploys and
+# rolls back. These checks run in parallel on GitHub's servers and need no VMs,
+# so a mistake is visible on GitHub within a minute or two.
+# No secrets are used here: the Ansible vault stays encrypted.
+
+name: CI checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python:
+    name: Python ${{ matrix.component }} - lint, security, unit tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component: [backend, frontend]
+    defaults:
+      run:
+        working-directory: app/${{ matrix.component }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install the app and the test tools
+        run: pip install -r requirements.txt -r ../requirements-dev.txt
+      - name: Ruff (lint)
+        run: ruff check --config ../ruff.toml .
+      - name: Bandit (security scan of the code)
+        run: bandit -q -r . -x ./tests
+      - name: pytest (unit tests)
+        run: python -m pytest -q tests
+
+  ansible:
+    name: Ansible - lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ansible
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install Ansible and ansible-lint
+        run: pip install ansible ansible-lint
+      - name: ansible-lint
+        run: |
+          # ansible.cfg points to ~/.vault_pass. Nothing is decrypted while
+          # linting, so a dummy file is enough - the real password never leaves your laptop.
+          echo "not-the-real-password" > ~/.vault_pass
+          ansible-lint site.yml deploy.yml
+
+  shell:
+    name: Shell scripts - shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: shellcheck
+        run: shellcheck scripts/*.sh ci/*.sh vagrant/*.sh ansible/roles/backup_source/files/backup-export

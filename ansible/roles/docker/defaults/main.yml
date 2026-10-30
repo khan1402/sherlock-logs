@@ -1,0 +1,12 @@
+# Default values for the docker role.
+
+docker_packages:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+  - docker-buildx-plugin
+  - docker-compose-plugin
+  - python3-docker        # lets Ansible's community.docker modules talk to Docker
+
+# x86_64 (what Ansible reports) -> amd64 (what Docker's apt repo calls it)
+docker_apt_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"

@@ -1,0 +1,67 @@
+# roles/backup_server - the backup VM pulls a daily archive from every server (bonus).
+#
+# Pull, not push: the backup server holds the only backup key, so a hacked
+# web server can neither read nor delete the other servers' backups.
+
+- name: Create the backup folder (only devops can read it)
+  ansible.builtin.file:
+    path: "{{ backup_server_dir }}"
+    state: directory
+    owner: "{{ devops_user }}"
+    group: "{{ devops_user }}"
+    mode: "0700"
+
+- name: Create the backup SSH key (once)
+  ansible.builtin.command:
+    cmd: >-
+      ssh-keygen -t ed25519 -N "" -q -C "backup@{{ inventory_hostname }}"
+      -f {{ backup_server_key }}
+    creates: "{{ backup_server_key }}"
+
+- name: Make devops the owner of the backup key
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    owner: "{{ devops_user }}"
+    group: "{{ devops_user }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ backup_server_key }}", mode: "0600" }
+    - { path: "{{ backup_server_key }}.pub", mode: "0644" }
+
+- name: Read the public key (the sources need it)
+  ansible.builtin.slurp:
+    src: "{{ backup_server_key }}.pub"
+  register: backup_server_pubkey_file
+
+- name: Remember the public key for the backup_source role
+  ansible.builtin.set_fact:
+    backup_server_pubkey: "{{ backup_server_pubkey_file.content | b64decode | trim }}"
+
+- name: Install the backup script
+  ansible.builtin.template:
+    src: backup-pull.sh.j2
+    dest: /usr/local/bin/backup-pull
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the systemd service and daily timer
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - backup-pull.service
+    - backup-pull.timer
+  notify: Reload systemd
+
+- name: Apply systemd changes now
+  ansible.builtin.meta: flush_handlers
+
+- name: Start the daily timer now and on every boot
+  ansible.builtin.service:
+    name: backup-pull.timer
+    state: started
+    enabled: true

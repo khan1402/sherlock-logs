@@ -1,0 +1,13 @@
+# {{ ansible_managed }}
+# Fail2Ban watches the SSH log and blocks IPs that keep failing to log in.
+# Bans are added as UFW rules, so 'sudo ufw status' shows them.
+
+[DEFAULT]
+bantime   = {{ fail2ban_bantime }}
+findtime  = {{ fail2ban_findtime }}
+maxretry  = {{ fail2ban_maxretry }}
+ignoreip  = {{ fail2ban_ignoreip | join(' ') }}
+banaction = ufw
+
+[sshd]
+enabled = true

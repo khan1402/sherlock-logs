@@ -1,0 +1,44 @@
+# roles/image_build - build the FIRST version of the app images and push them
+# to Docker Hub, so a blank-slate 'vagrant up' can deploy the app without
+# waiting for Jenkins. Later versions are built by the Jenkins pipeline.
+
+# no_log hides the token, but it also hides WHY a login failed. So if the
+# login fails, 'rescue' prints only Docker's error message (it never contains
+# the token) and stops the run.
+- name: Log in to Docker Hub
+  block:
+    - name: Log in to Docker Hub with the access token
+      community.docker.docker_login:
+        username: "{{ dockerhub_user }}"
+        password: "{{ vault_dockerhub_token }}"
+      no_log: true   # never print the token in the output
+  rescue:
+    - name: Stop with a clear message
+      ansible.builtin.fail:
+        msg: >-
+          Docker Hub login failed for user '{{ dockerhub_user }}':
+          {{ ansible_failed_result.msg | default('unknown error') }}.
+          Check dockerhub_user in group_vars/all/vars.yml (username only) and
+          vault_dockerhub_token in vault.yml (needs Read & Write permission).
+
+- name: Check which initial images already exist on this machine
+  community.docker.docker_image_info:
+    name: "{{ app_images[item] }}:{{ app_initial_tag }}"
+  loop: "{{ app_images.keys() | list }}"
+  register: image_build_existing
+
+# Only builds on a fresh cicd-server, so re-runs stay at changed=0.
+- name: Build and push the initial images
+  community.docker.docker_image:
+    name: "{{ app_images[item.item] }}"
+    tag: "{{ app_initial_tag }}"
+    source: build
+    build:
+      path: "{{ image_build_source }}/{{ item.item }}"
+      args:
+        APP_VERSION: "{{ app_initial_tag }}"
+    push: true
+  loop: "{{ image_build_existing.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.images | length == 0

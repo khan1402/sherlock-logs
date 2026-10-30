@@ -1,0 +1,10 @@
+# Default values for the hardening role.
+
+# 027 = owner: full, group: read, others: nothing.
+hardening_umask: "027"
+
+# Default accounts shipped with the Vagrant box. Their passwords are locked so
+# nobody can log in with them on the console. (SSH is already devops-only.)
+hardening_locked_users:
+  - vagrant
+  - ubuntu

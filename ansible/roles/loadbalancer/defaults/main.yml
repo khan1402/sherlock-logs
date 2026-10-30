@@ -1,0 +1,6 @@
+# Default values for the loadbalancer role.
+
+# least_conn: send each request to the web server with the fewest active
+# connections (same algorithm as Project 2). Alternatives: round-robin
+# (nginx default), ip_hash (same client -> same server).
+loadbalancer_method: least_conn

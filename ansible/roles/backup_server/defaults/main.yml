@@ -1,0 +1,11 @@
+# Default values for the backup_server role (bonus).
+
+backup_server_dir: /srv/backups
+backup_server_keep_days: 7
+# Every day at 02:00 (+ up to 10 random minutes). Missed runs catch up after boot.
+backup_server_schedule: "*-*-* 02:00:00"
+
+# Pull from every core VM (by hostname - /etc/hosts maps them to their IPs).
+backup_server_sources: "{{ groups['core'] }}"
+
+backup_server_key: "/home/{{ devops_user }}/.ssh/backup_key"

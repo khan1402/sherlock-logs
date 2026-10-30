@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# {{ ansible_managed }}
+# backup-pull - fetch one backup archive from every server.
+# Runs daily via backup-pull.timer, as devops. Manual run:
+#   sudo systemctl start backup-pull.service && journalctl -u backup-pull -n 20
+set -uo pipefail
+
+DIR="{{ backup_server_dir }}"
+KEEP_DAYS="{{ backup_server_keep_days }}"
+STAMP="$(date +%Y%m%d-%H%M%S)"
+failed=0
+
+for host in {{ backup_server_sources | join(' ') }}; do
+  mkdir -p "$DIR/$host"
+  out="$DIR/$host/$host-$STAMP.tar.gz"
+  # The source's authorized_keys runs backup-export no matter what we ask for.
+  if ssh -i "{{ backup_server_key }}" -o BatchMode=yes -o ConnectTimeout=15 \
+         -o StrictHostKeyChecking=accept-new "{{ devops_user }}@$host" > "$out.part" \
+     && gzip -t "$out.part"; then
+    mv "$out.part" "$out"
+    echo "OK    $host  $(du -h "$out" | cut -f1)"
+  else
+    rm -f "$out.part"
+    echo "FAIL  $host"
+    failed=1
+  fi
+done
+
+# Keep only the last KEEP_DAYS days.
+find "$DIR" -name '*.tar.gz' -mtime +"$KEEP_DAYS" -delete
+exit "$failed"

@@ -1,0 +1,10 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Pull backups from all servers
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User={{ devops_user }}
+ExecStart=/usr/local/bin/backup-pull

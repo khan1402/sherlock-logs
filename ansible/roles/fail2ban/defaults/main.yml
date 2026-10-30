@@ -1,0 +1,14 @@
+# Default values for the fail2ban role (bonus - only with -e enable_bonus=true).
+
+# Ban an IP for 10 minutes after 5 failed SSH logins within 10 minutes.
+fail2ban_bantime: 10m
+fail2ban_findtime: 10m
+fail2ban_maxretry: 5
+
+# Never ban the machines that manage the VMs: the admin laptop (validate.sh
+# deliberately tries root and password logins, which count as failures),
+# cicd-server (Ansible, Jenkins) and the backup server.
+# Demonstrate a ban with: sudo fail2ban-client set sshd banip 203.0.113.7
+fail2ban_ignoreip: >-
+  {{ ['127.0.0.1/8', '::1', admin_ip]
+     + (groups['cicd'] + groups['backups']) | map('extract', hostvars, 'ansible_host') | list }}

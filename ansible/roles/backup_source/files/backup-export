@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# backup-export - write a compressed archive of this server's important files
+# to stdout. Managed by Ansible (roles/backup_source).
+#
+# It can ONLY be started by the backup server: its SSH key is locked to this
+# one command (see authorized_keys). It cannot open a shell or change files.
+set -uo pipefail
+
+paths=(/etc)
+excludes=(
+  --exclude=/etc/shadow --exclude=/etc/shadow-     # password hashes stay on the server
+  --exclude=/etc/gshadow --exclude=/etc/gshadow-
+  --exclude='/etc/ssh/ssh_host_*_key'              # private host keys stay on the server
+)
+
+# cicd-server: Jenkins configuration, jobs and build history.
+# Plugins, workspaces and caches are left out - Ansible recreates them.
+if [[ -d /var/lib/jenkins ]]; then
+  paths+=(/var/lib/jenkins)
+  excludes+=(
+    --exclude=/var/lib/jenkins/plugins --exclude=/var/lib/jenkins/workspace
+    --exclude=/var/lib/jenkins/caches  --exclude=/var/lib/jenkins/war
+    --exclude=/var/lib/jenkins/.cache
+  )
+fi
+
+tar --create --gzip --file=- --warning=no-file-changed "${excludes[@]}" "${paths[@]}" 2>/dev/null
+status=$?
+# tar exit code 1 = "some file changed while reading" - normal on a live system.
+if (( status <= 1 )); then exit 0; else exit "$status"; fi

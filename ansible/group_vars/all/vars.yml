@@ -1,0 +1,32 @@
+# group_vars/all/vars.yml - settings shared by EVERY host.
+# Secrets do NOT go here; they go in vault.yml (encrypted with Ansible Vault).
+
+devops_user: devops
+timezone: Europe/Helsinki
+
+# Your laptop's address on the VirtualBox host-only network.
+# The firewall allows SSH from here (and from cicd-server).
+admin_ip: 192.168.56.1
+
+# Sudo now asks devops for a password, so Ansible needs it too.
+# The real value lives in the encrypted vault.yml.
+ansible_become_password: "{{ vault_devops_password }}"
+
+# Bonus features (backup VM, Fail2Ban, ...) are off by default.
+# The Vagrantfile turns them on with: -e enable_bonus=true
+enable_bonus: false
+
+# --- Application (Group 3) ----------------------------------------------------
+# Images live on Docker Hub: <dockerhub_user>/alchemy-backend and -frontend.
+# The access token for pushing is vault_dockerhub_token in vault.yml.
+dockerhub_user: zeek14
+
+app_images:
+  backend: "{{ dockerhub_user }}/alchemy-backend"
+  frontend: "{{ dockerhub_user }}/alchemy-frontend"
+
+# Tag of the first image, built by site.yml itself (Jenkins builds later ones).
+app_initial_tag: initial
+
+# The frontend calls the backend here (first host in 'appservers').
+app_backend_url: "http://{{ hostvars[groups['appservers'][0]]['ansible_host'] }}:3000"

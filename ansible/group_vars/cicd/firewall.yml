@@ -1,0 +1,6 @@
+# Jenkins UI: reachable from your laptop only (same rule as SSH).
+# The app itself is still reachable only through the load balancer.
+firewall_rules:
+  - port: 8080
+    sources: ["{{ admin_ip }}"]
+    comment: Jenkins UI from admin laptop

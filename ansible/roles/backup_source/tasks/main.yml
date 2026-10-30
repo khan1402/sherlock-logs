@@ -1,0 +1,32 @@
+# roles/backup_source - let the backup server pull a backup from this VM (bonus).
+#
+# Least privilege: the backup server's SSH key may run exactly ONE command
+# (backup-export), with no shell, no port forwarding and no terminal.
+
+- name: Install the backup export script
+  ansible.builtin.copy:
+    src: backup-export
+    dest: /usr/local/bin/backup-export
+    owner: root
+    group: root
+    mode: "0755"
+
+# The export must read root-only files (/etc, Jenkins), so it runs with sudo.
+# This rule allows ONLY this script without a password; everything else still asks.
+- name: Allow the export script to run as root without a password
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/92-devops-backup
+    content: |
+      # Managed by Ansible (roles/backup_source).
+      {{ devops_user }} ALL=(root) NOPASSWD: /usr/local/bin/backup-export
+    owner: root
+    group: root
+    mode: "0440"
+    validate: visudo -cf %s
+
+- name: Accept the backup server's key - locked to the export command
+  ansible.posix.authorized_key:
+    user: "{{ devops_user }}"
+    key: "{{ backup_source_pubkey }}"
+    key_options: 'command="sudo -n /usr/local/bin/backup-export",restrict'
+    state: present

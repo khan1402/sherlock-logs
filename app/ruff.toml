@@ -1,0 +1,9 @@
+# Ruff (Python linter) settings for both app components.
+target-version = "py312"
+line-length = 120
+
+[lint]
+# E/W = style errors and warnings, F = real bugs (undefined names, unused
+# imports...), B = common bug patterns, I = import order.
+select = ["E", "W", "F", "B", "I"]
+

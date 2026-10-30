@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+# Named 00-* so it is read FIRST: for most sshd settings the first value wins.
+
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+AllowUsers {{ devops_user }}
+
+MaxAuthTries 3
+X11Forwarding no
+

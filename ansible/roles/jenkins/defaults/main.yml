@@ -1,0 +1,31 @@
+# Default values for the jenkins role (runs on cicd-server only).
+# Project-specific values (Git URL, job name) live in group_vars/cicd/jenkins.yml.
+
+jenkins_port: 8080
+jenkins_home: /var/lib/jenkins
+
+# Jenkins LTS needs Java 21. 'headless' = no GUI libraries (it is a server).
+jenkins_java_package: openjdk-21-jre-headless
+
+# Max Java memory. cicd-server has 3 GB and also runs Docker builds.
+jenkins_heap: 768m
+
+# 1 vCPU -> 1 build at a time.
+jenkins_executors: 1
+
+# Tool that downloads all plugins (+ their dependencies) in one go,
+# picking versions that match the installed Jenkins core.
+jenkins_plugin_manager_version: "2.13.2"
+jenkins_plugin_manager_base: https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download
+jenkins_plugin_manager_url: >-
+  {{ jenkins_plugin_manager_base }}/{{ jenkins_plugin_manager_version
+  }}/jenkins-plugin-manager-{{ jenkins_plugin_manager_version }}.jar
+
+# JCasC reads secrets from files here (never written into casc.yaml itself).
+jenkins_secrets_dir: "{{ jenkins_home }}/casc_secrets"
+
+jenkins_admin_user: admin
+# Every job casc.yaml creates - checked after each start (see tasks/main.yml).
+jenkins_jobs:
+  - "{{ jenkins_job_name }}"
+  - "{{ jenkins_job_name }}-rollback"

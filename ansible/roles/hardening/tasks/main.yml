@@ -1,0 +1,96 @@
+# roles/hardening - users, sudo, SSH and umask.
+# Replaces the hardening half of Project 1-2's common.sh.
+
+# --- devops user ------------------------------------------------------------
+# The password comes from the encrypted vault. A FIXED salt keeps the hash
+# identical on every run, so this task stays idempotent (changed=0).
+- name: Ensure devops user has its password and sudo group
+  ansible.builtin.user:
+    name: "{{ devops_user }}"
+    shell: /bin/bash
+    groups: sudo
+    append: true
+    password: "{{ vault_devops_password | password_hash('sha512', vault_devops_password_salt) }}"
+
+# Order matters: the password above MUST exist before passwordless sudo is
+# removed, otherwise Ansible would lock itself out of sudo.
+- name: Remove the temporary passwordless sudo from bootstrap
+  ansible.builtin.file:
+    path: /etc/sudoers.d/90-devops-bootstrap
+    state: absent
+
+- name: Allow read-only 'ufw status' without a password (for validation scripts)
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/91-devops-readonly
+    content: |
+      # Managed by Ansible. ONE narrow exception: everything else needs a password.
+      {{ devops_user }} ALL=(ALL) NOPASSWD: /usr/sbin/ufw status, /usr/sbin/ufw status verbose
+    owner: root
+    group: root
+    mode: "0440"
+    validate: visudo -cf %s
+
+# --- other accounts -----------------------------------------------------------
+- name: Read the list of local users
+  ansible.builtin.getent:
+    database: passwd
+
+- name: Lock passwords of default accounts
+  ansible.builtin.user:
+    name: "{{ item }}"
+    password_lock: true
+  loop: "{{ hardening_locked_users }}"
+  when: item in ansible_facts.getent_passwd
+
+# --- SSH ----------------------------------------------------------------------
+- name: Harden the SSH server (key-only, no root, devops only)
+  ansible.builtin.template:
+    src: sshd-hardening.conf.j2
+    dest: /etc/ssh/sshd_config.d/00-hardening.conf
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/sbin/sshd -t -f %s
+  notify: Restart ssh
+
+# --- umask --------------------------------------------------------------------
+- name: Set default umask in login.defs
+  ansible.builtin.lineinfile:
+    path: /etc/login.defs
+    regexp: '^UMASK\s'
+    line: "UMASK           {{ hardening_umask }}"
+
+# Ubuntu already has a 'session optional pam_umask.so' line. We patch THAT line
+# instead of adding a second one (Project 1 lesson).
+- name: Set umask for every login session (PAM)
+  ansible.builtin.lineinfile:
+    path: /etc/pam.d/common-session
+    regexp: '^session\s+optional\s+pam_umask\.so'
+    line: "session optional pam_umask.so umask=0{{ hardening_umask }}"
+
+- name: Set umask for interactive shells
+  ansible.builtin.copy:
+    dest: /etc/profile.d/99-umask.sh
+    content: |
+      # Managed by Ansible
+      umask {{ hardening_umask }}
+    owner: root
+    group: root
+    mode: "0644"
+
+# --- automatic security updates -----------------------------------------------
+- name: Install unattended-upgrades
+  ansible.builtin.apt:
+    name: unattended-upgrades
+    state: present
+    lock_timeout: 600
+
+- name: Enable daily automatic security updates
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+    owner: root
+    group: root
+    mode: "0644"

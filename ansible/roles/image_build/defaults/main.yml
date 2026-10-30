@@ -1,0 +1,4 @@
+# Default values for the image_build role (runs on cicd-server only).
+
+# Where bootstrap.sh copied the repository on cicd-server.
+image_build_source: "{{ playbook_dir }}/../app"

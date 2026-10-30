@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infrastructure Insight</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Automation Alchemy - Demo Review-1</h1>
+            <div class="responding-server">
+                <span class="status-dot"></span>
+                Responding server: <strong>{{ web_server_hostname }}</strong>
+            </div>
+        </header>
+
+        {% if data %}
+        <div class="card">
+            <h2>Backend Metrics</h2>
+            <div class="metrics-grid">
+                <div class="metric">
+                    <div class="metric-label">Hostname</div>
+                    <div class="metric-value">{{ data.hostname }}</div>
+                </div>
+
+                <div class="metric">
+                    <div class="metric-label">Operating System</div>
+                    <div class="metric-value">{{ data.os }}</div>
+                </div>
+
+                <div class="metric">
+                    <div class="metric-label">CPU Cores</div>
+                    <div class="metric-value">{{ data.cpu.cores_count }}</div>
+                </div>
+
+                <div class="metric">
+                    <div class="metric-label">CPU Usage</div>
+                    <div class="metric-value">{{ data.cpu.usage_percent }}%</div>
+                    <div class="bar-track">
+                        <div class="bar-fill" style="--bar-width: {{ data.cpu.usage_percent }}; width: calc(var(--bar-width) * 1%);"></div>
+                    </div>
+                </div>
+
+                <div class="metric">
+                    <div class="metric-label">Memory Used</div>
+                    <div class="metric-value">{{ data.memory.used_mb }} / {{ data.memory.total_mb }} MB</div>
+                    <div class="bar-track">
+                        <div class="bar-fill" style="--bar-width: {{ data.memory.percent_used }}; width: calc(var(--bar-width) * 1%);"></div>
+                    </div>
+                </div>
+
+                <div class="metric">
+                    <div class="metric-label">Memory Usage</div>
+                    <div class="metric-value">{{ data.memory.percent_used }}%</div>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="card">
+            <h2>Backend Metrics</h2>
+            <p class="metric-label">{{ error }}</p>
+        </div>
+        {% endif %}
+
+        <footer>
+            Infrastructure Insight — DevOps diagnostic dashboard<br>
+            Frontend {{ frontend_version }} · Backend {{ data.version if data else "unavailable" }}
+        </footer>
+    </div>
+</body>
+</html>

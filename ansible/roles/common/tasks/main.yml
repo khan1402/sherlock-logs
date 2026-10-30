@@ -1,0 +1,57 @@
+# roles/common - the baseline every VM gets.
+# Replaces the update / hostname / timezone parts of Project 1-2's common.sh.
+
+- name: Update package lists and apply all security patches
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600   # skip 'apt update' if it already ran in the last hour
+    upgrade: dist
+    autoremove: true
+    lock_timeout: 600        # wait if unattended-upgrades is holding the apt lock
+
+# A new kernel only takes effect after a reboot. cicd-server is skipped: it is
+# running this playbook, so rebooting it would cut off Ansible itself.
+- name: Check whether the updates need a reboot
+  ansible.builtin.stat:
+    path: /var/run/reboot-required
+  register: common_reboot_required
+
+- name: Reboot to load the new kernel
+  ansible.builtin.reboot:
+    reboot_timeout: 600
+  when:
+    - common_reboot_required.stat.exists
+    - inventory_hostname not in groups['cicd']
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name: "{{ common_base_packages }}"
+    state: present
+    lock_timeout: 600
+
+- name: Stop cloud-init from overwriting hostname and /etc/hosts on reboot
+  ansible.builtin.copy:
+    dest: /etc/cloud/cloud.cfg.d/99-automation-alchemy.cfg
+    content: |
+      # Managed by Ansible: hostname and /etc/hosts are owned by the common role.
+      preserve_hostname: true
+      manage_etc_hosts: false
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Set hostname
+  ansible.builtin.hostname:
+    name: "{{ inventory_hostname }}"
+
+- name: Write /etc/hosts so every VM can reach the others by name
+  ansible.builtin.template:
+    src: hosts.j2
+    dest: /etc/hosts
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Set timezone
+  community.general.timezone:
+    name: "{{ timezone }}"

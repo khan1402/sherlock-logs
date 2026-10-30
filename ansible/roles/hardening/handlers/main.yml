@@ -1,0 +1,6 @@
+# Handlers run ONCE at the end of the play, and only if a task notified them.
+
+- name: Restart ssh
+  ansible.builtin.service:
+    name: ssh
+    state: restarted

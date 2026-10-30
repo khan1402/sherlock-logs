@@ -1,0 +1,22 @@
+# roles/fail2ban - block IPs that keep failing SSH logins (bonus).
+
+- name: Install Fail2Ban
+  ansible.builtin.apt:
+    name: fail2ban
+    state: present
+    lock_timeout: 600
+
+- name: Configure the SSH jail
+  ansible.builtin.template:
+    src: jail.local.j2
+    dest: /etc/fail2ban/jail.local
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart fail2ban
+
+- name: Start Fail2Ban now and on every boot
+  ansible.builtin.service:
+    name: fail2ban
+    state: started
+    enabled: true

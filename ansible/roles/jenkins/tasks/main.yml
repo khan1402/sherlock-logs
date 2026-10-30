@@ -1,0 +1,250 @@
+# roles/jenkins - Jenkins LTS on cicd-server, configured 100% as code (JCasC).
+# No setup wizard, no clicking: admin user, credentials and the pipeline job
+# all come from templates/casc.yaml.j2.
+
+# --- Install -------------------------------------------------------------------
+- name: Install Java and Git for Jenkins
+  ansible.builtin.apt:
+    name:
+      - "{{ jenkins_java_package }}"
+      - fontconfig   # Jenkins needs it to draw graphs in the UI
+      - git          # Jenkins checks out the repository with it
+    state: present
+    lock_timeout: 600
+
+- name: Download Jenkins' signing key (proves packages really come from Jenkins)
+  ansible.builtin.get_url:
+    url: https://pkg.jenkins.io/debian-stable/jenkins.io-2026.key
+    dest: /etc/apt/keyrings/jenkins-keyring.asc
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Add the Jenkins LTS apt repository
+  ansible.builtin.apt_repository:
+    repo: deb [signed-by=/etc/apt/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/
+    filename: jenkins
+    # umask 0027 would make it root-only; 0644 lets any user run apt read-only.
+    mode: "0644"
+    state: present
+
+# Written BEFORE the package, so Jenkins never starts with the setup wizard.
+- name: Create the systemd override folder for Jenkins
+  ansible.builtin.file:
+    path: /etc/systemd/system/jenkins.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Configure the Jenkins service (no wizard, JCasC file, memory limit)
+  ansible.builtin.template:
+    src: override.conf.j2
+    dest: /etc/systemd/system/jenkins.service.d/override.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload systemd
+    - Restart jenkins
+
+- name: Install Jenkins LTS
+  ansible.builtin.apt:
+    name: jenkins
+    state: present
+    lock_timeout: 600
+
+# Builds images (docker build/push). Note: docker group = root-level access,
+# acceptable here because cicd-server exists only to build and deploy.
+- name: Let Jenkins use Docker
+  ansible.builtin.user:
+    name: jenkins
+    groups: docker
+    append: true
+  notify: Restart jenkins
+
+# --- Plugins -------------------------------------------------------------------
+- name: Download the Jenkins plugin manager
+  ansible.builtin.get_url:
+    url: "{{ jenkins_plugin_manager_url }}"
+    dest: "/opt/jenkins-plugin-manager-{{ jenkins_plugin_manager_version }}.jar"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Copy the plugin list
+  ansible.builtin.copy:
+    src: plugins.txt
+    dest: "{{ jenkins_home }}/plugins.txt"
+    owner: jenkins
+    group: jenkins
+    mode: "0644"
+  register: jenkins_plugin_list
+
+- name: Check whether the plugins are already installed
+  ansible.builtin.stat:
+    path: "{{ jenkins_home }}/plugins/configuration-as-code.jpi"
+  register: jenkins_casc_plugin
+
+# Runs only on first install or when plugins.txt changes (keeps re-runs at changed=0).
+- name: Install the plugins and their dependencies
+  ansible.builtin.command:
+    cmd: >-
+      java -jar /opt/jenkins-plugin-manager-{{ jenkins_plugin_manager_version }}.jar
+      --war /usr/share/java/jenkins.war
+      --plugin-download-directory {{ jenkins_home }}/plugins
+      --plugin-file {{ jenkins_home }}/plugins.txt
+  when: jenkins_plugin_list.changed or not jenkins_casc_plugin.stat.exists
+  changed_when: true
+  notify: Restart jenkins
+
+- name: Make sure Jenkins owns its plugins
+  ansible.builtin.file:
+    path: "{{ jenkins_home }}/plugins"
+    owner: jenkins
+    group: jenkins
+    recurse: true
+
+# --- Configuration as code -------------------------------------------------------
+- name: Create the folder for JCasC secrets (only Jenkins can read it)
+  ansible.builtin.file:
+    path: "{{ jenkins_secrets_dir }}"
+    state: directory
+    owner: jenkins
+    group: jenkins
+    mode: "0700"
+
+- name: Write secrets for JCasC (values come from the vault)
+  ansible.builtin.copy:
+    content: "{{ item.value }}"
+    dest: "{{ jenkins_secrets_dir }}/{{ item.name }}"
+    owner: jenkins
+    group: jenkins
+    mode: "0400"
+  loop:
+    - { name: admin_password, value: "{{ vault_jenkins_admin_password }}" }
+    - { name: dockerhub_token, value: "{{ vault_dockerhub_token }}" }
+  loop_control:
+    label: "{{ item.name }}"
+  no_log: true
+  notify: Restart jenkins
+
+- name: Give Jenkins the Slack webhook (only when one is in the vault)
+  ansible.builtin.copy:
+    content: "{{ vault_slack_webhook_url }}"
+    dest: "{{ jenkins_secrets_dir }}/slack_webhook"
+    owner: jenkins
+    group: jenkins
+    mode: "0400"
+  when: vault_slack_webhook_url is defined
+  no_log: true
+  notify: Restart jenkins
+
+- name: Give Jenkins the git token (only when the repository is private)
+  ansible.builtin.copy:
+    content: "{{ vault_git_token }}"
+    dest: "{{ jenkins_secrets_dir }}/git_token"
+    owner: jenkins
+    group: jenkins
+    mode: "0400"
+  when: vault_git_token is defined
+  no_log: true
+  notify: Restart jenkins
+
+# The same key and vault password bootstrap.sh gave to devops.
+- name: Give Jenkins the Ansible SSH key and vault password
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ jenkins_secrets_dir }}/{{ item.name }}"
+    remote_src: true
+    owner: jenkins
+    group: jenkins
+    mode: "0400"
+  loop:
+    - { name: ansible_key, src: "/home/{{ devops_user }}/.ssh/ansible_key" }
+    - { name: vault_pass, src: "/home/{{ devops_user }}/.vault_pass" }
+  loop_control:
+    label: "{{ item.name }}"
+  notify: Restart jenkins
+
+- name: Write the Jenkins configuration (JCasC)
+  ansible.builtin.template:
+    src: casc.yaml.j2
+    dest: "{{ jenkins_home }}/casc.yaml"
+    owner: jenkins
+    group: jenkins
+    mode: "0640"
+  notify: Restart jenkins
+
+# --- Start and verify ------------------------------------------------------------
+- name: Start Jenkins now and on every boot
+  ansible.builtin.service:
+    name: jenkins
+    state: started
+    enabled: true
+
+- name: Apply pending restarts now
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait until Jenkins answers
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ jenkins_port }}/login"
+    status_code: 200
+  register: jenkins_up
+  until: jenkins_up.status == 200
+  retries: 60
+  delay: 5
+
+# Proves JCasC worked: the admin can log in AND every job exists.
+# Seen once: after a restart Jenkins skipped creating a NEW job from casc.yaml.
+# If any job is missing, re-apply the configuration (same as clicking
+# "Reload existing configuration") and check again - no manual step needed.
+- name: Check that the admin can log in and every job exists
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ jenkins_port }}/job/{{ item }}/api/json"
+    user: "{{ jenkins_admin_user }}"
+    password: "{{ vault_jenkins_admin_password }}"
+    force_basic_auth: true
+    status_code: [200, 404]
+  loop: "{{ jenkins_jobs }}"
+  register: jenkins_job_check
+
+- name: Re-apply the JCasC configuration when a job is missing
+  when: jenkins_job_check.results | selectattr('status', 'equalto', 404) | list | length > 0
+  block:
+    # Jenkins blocks POST requests without a CSRF token ("crumb"),
+    # and the crumb only works together with its session cookie.
+    - name: Get a CSRF token for the reload request
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ jenkins_port }}/crumbIssuer/api/json"
+        user: "{{ jenkins_admin_user }}"
+        password: "{{ vault_jenkins_admin_password }}"
+        force_basic_auth: true
+        return_content: true
+      register: jenkins_crumb
+
+    - name: Reload the configuration as code
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ jenkins_port }}/configuration-as-code/reload"
+        method: POST
+        user: "{{ jenkins_admin_user }}"
+        password: "{{ vault_jenkins_admin_password }}"
+        force_basic_auth: true
+        headers:
+          Jenkins-Crumb: "{{ jenkins_crumb.json.crumb }}"
+          Cookie: "{{ jenkins_crumb.cookies_string }}"
+        status_code: [200, 302]
+      changed_when: true
+
+- name: Every job exists now
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ jenkins_port }}/job/{{ item }}/api/json"
+    user: "{{ jenkins_admin_user }}"
+    password: "{{ vault_jenkins_admin_password }}"
+    force_basic_auth: true
+    status_code: 200
+  loop: "{{ jenkins_jobs }}"
+  register: jenkins_job_final
+  until: jenkins_job_final.status == 200
+  retries: 12
+  delay: 5

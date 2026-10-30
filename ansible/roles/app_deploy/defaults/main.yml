@@ -1,0 +1,11 @@
+# Default values for the app_deploy role.
+# The play that uses this role sets app_deploy_component to 'backend' or 'frontend'.
+
+app_deploy_settings:
+  backend:
+    port: 3000
+    env: {}
+  frontend:
+    port: 80
+    env:
+      BACKEND_URL: "{{ app_backend_url }}"

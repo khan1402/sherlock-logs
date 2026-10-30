@@ -1,0 +1,6 @@
+# Tools used ONLY by the CI pipeline (never installed in the app images).
+pytest==8.3.3       # unit tests
+ruff==0.6.9         # linter
+bandit==1.7.10      # security scanner for Python code
+httpx==0.27.2       # FastAPI's TestClient needs it (backend doesn't have it)
+

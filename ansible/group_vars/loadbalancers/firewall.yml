@@ -1,0 +1,5 @@
+# The load balancer is the ONLY VM the outside world may reach.
+firewall_rules:
+  - port: 80
+    sources: ["any"]
+    comment: HTTP from anywhere

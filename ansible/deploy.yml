@@ -1,0 +1,23 @@
+# deploy.yml - deploy the application containers.
+#
+#   Called by site.yml (first deploy) and later by Jenkins / rollback:
+#     ansible-playbook deploy.yml -e image_tag=3f2a1bc   (short commit ID)
+#
+# Backend first, then the web servers ONE AT A TIME (serial: 1): while one web
+# server restarts, the load balancer keeps sending users to the other one.
+
+- name: Deploy backend
+  hosts: appservers
+  serial: 1
+  roles:
+    - role: app_deploy
+      vars:
+        app_deploy_component: backend
+
+- name: Deploy frontend (rolling, one web server at a time)
+  hosts: webservers
+  serial: 1
+  roles:
+    - role: app_deploy
+      vars:
+        app_deploy_component: frontend

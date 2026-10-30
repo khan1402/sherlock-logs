@@ -1,0 +1,129 @@
+# Jenkins Configuration as Code (JCasC) - managed by Ansible (roles/jenkins).
+# Jenkins applies this file on every start, so changes made by clicking in the
+# UI are overwritten. Change this template instead.
+#
+# ${readFile:...} is JCasC syntax: the secret is read from a file at startup,
+# so no password or key is ever written into this file.
+
+jenkins:
+  systemMessage: "Automation Alchemy CI/CD - configured as code (Ansible + JCasC). UI changes are overwritten on restart."
+  numExecutors: {{ jenkins_executors }}
+  mode: NORMAL
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "{{ jenkins_admin_user }}"
+          name: "Administrator"
+          password: "${readFile:{{ jenkins_secrets_dir }}/admin_password}"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+unclassified:
+  location:
+    url: "http://{{ ansible_host }}:{{ jenkins_port }}/"
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          # Pipeline pushes images with this.
+          - usernamePassword:
+              scope: GLOBAL
+              id: dockerhub
+              description: "Docker Hub - push app images"
+              username: "{{ dockerhub_user }}"
+              password: "${readFile:{{ jenkins_secrets_dir }}/dockerhub_token}"
+          # Pipeline runs Ansible over SSH with this.
+          - basicSSHUserPrivateKey:
+              scope: GLOBAL
+              id: ansible-ssh-key
+              description: "SSH key Ansible uses to reach the VMs"
+              username: "{{ devops_user }}"
+              privateKeySource:
+                directEntry:
+                  privateKey: "${readFile:{{ jenkins_secrets_dir }}/ansible_key}"
+          # Ansible decrypts vault.yml (sudo password etc.) with this.
+          - file:
+              scope: GLOBAL
+              id: ansible-vault-pass
+              description: "Ansible Vault password file"
+              fileName: vault_pass
+              secretBytes: "${readFileBase64:{{ jenkins_secrets_dir }}/vault_pass}"
+{% if vault_slack_webhook_url is defined %}
+          # Pipeline posts build results to Slack (#deployments) with this.
+          - string:
+              scope: GLOBAL
+              id: slack-webhook
+              description: "Slack incoming webhook - #deployments"
+              secret: "${readFile:{{ jenkins_secrets_dir }}/slack_webhook}"
+{% endif %}
+{% if vault_git_token is defined %}
+          # Only needed when the Git repository is private.
+          - usernamePassword:
+              scope: GLOBAL
+              id: git-credentials
+              description: "Git - read the repository"
+              username: "{{ jenkins_git_user }}"
+              password: "${readFile:{{ jenkins_secrets_dir }}/git_token}"
+{% endif %}
+
+# The jobs themselves (Job DSL). Their steps live in Jenkinsfiles in Git.
+jobs:
+  # Main pipeline: every new commit -> test, build, push, deploy (auto-rollback on failure).
+  - script: |
+      pipelineJob('{{ jenkins_job_name }}') {
+        description('Builds, tests, pushes and deploys the app. Checks Git for new commits every minute.')
+        properties {
+          pipelineTriggers {
+            triggers {
+              pollSCM {
+                scmpoll_spec('{{ jenkins_poll_schedule }}')
+              }
+            }
+          }
+        }
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('{{ jenkins_git_url }}')
+{% if vault_git_token is defined %}
+                  credentials('git-credentials')
+{% endif %}
+                }
+                branch('*/{{ jenkins_git_branch }}')
+              }
+            }
+            scriptPath('Jenkinsfile')
+            lightweight(true)
+          }
+        }
+      }
+  # Manual rollback: "Build with Parameters" -> deploy any earlier version.
+  - script: |
+      pipelineJob('{{ jenkins_job_name }}-rollback') {
+        description('Manual rollback: deploy an earlier version (commit ID) and check it is live.')
+        parameters {
+          stringParam('VERSION', '', 'Version to deploy: a 7-character commit ID, e.g. c551d65 (see the build names of {{ jenkins_job_name }}).')
+        }
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('{{ jenkins_git_url }}')
+{% if vault_git_token is defined %}
+                  credentials('git-credentials')
+{% endif %}
+                }
+                branch('*/{{ jenkins_git_branch }}')
+              }
+            }
+            scriptPath('ci/Jenkinsfile.rollback')
+            lightweight(true)
+          }
+        }
+      }

@@ -1,0 +1,49 @@
+# roles/firewall - UFW: deny everything incoming, then open only what is needed.
+
+- name: Install UFW
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+    lock_timeout: 600
+
+- name: Deny all incoming traffic by default
+  community.general.ufw:
+    default: deny
+    direction: incoming
+
+- name: Allow all outgoing traffic (updates, Docker Hub, ...)
+  community.general.ufw:
+    default: allow
+    direction: outgoing
+
+# SSH rules are added BEFORE the firewall is switched on, so Ansible never
+# locks itself out mid-run.
+- name: Allow SSH only from trusted machines
+  community.general.ufw:
+    rule: allow
+    port: "22"
+    proto: tcp
+    from_ip: "{{ item }}"
+    comment: SSH
+  loop: "{{ firewall_ssh_sources }}"
+
+# One UFW rule per (port, source) pair: subelements turns
+#   {port: 3000, sources: [ip1, ip2]}  into  (3000, ip1), (3000, ip2)
+- name: Allow service ports for this VM
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.0.port | string }}"
+    proto: "{{ item.0.proto | default('tcp') }}"
+    from_ip: "{{ item.1 }}"
+    comment: "{{ item.0.comment | default(omit) }}"
+  loop: "{{ firewall_rules | subelements('sources') }}"
+  loop_control:
+    label: "{{ item.0.port }} from {{ item.1 }}"
+
+- name: Log blocked connections
+  community.general.ufw:
+    logging: low
+
+- name: Turn the firewall on
+  community.general.ufw:
+    state: enabled

@@ -1,0 +1,82 @@
+// ci/Jenkinsfile.rollback - MANUAL rollback (job: automation-alchemy-rollback).
+//
+// "Build with Parameters" -> VERSION = an earlier commit ID (e.g. c551d65).
+// Deploys that version with the same deploy.yml, proves it is live through
+// the load balancer, and reports to Slack. Nothing is built: the images are
+// already on Docker Hub.
+
+pipeline {
+    agent any
+
+    options {
+        timestamps()
+        ansiColor('xterm')
+        timeout(time: 15, unit: 'MINUTES')
+    }
+
+    environment {
+        LB_URL              = 'http://192.168.56.10/'
+        ANSIBLE_FORCE_COLOR = '1'
+    }
+
+    stages {
+        stage('Check version') {
+            steps {
+                script {
+                    // VERSION comes from the job's parameter (defined in casc.yaml).
+                    if (!(params.VERSION ==~ /[0-9a-f]{7}|initial/)) {
+                        error("VERSION must be a 7-character commit ID like c551d65 (or 'initial'), got '${params.VERSION}'")
+                    }
+                    env.IMAGE_TAG = params.VERSION
+                    env.PREVIOUS_TAG = sh(script: 'bash ci/live-version.sh "$LB_URL"', returnStdout: true).trim()
+                    currentBuild.displayName = "#${env.BUILD_NUMBER} ${env.PREVIOUS_TAG ?: '?'} -> ${env.IMAGE_TAG}"
+                }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                withCredentials([
+                    sshUserPrivateKey(credentialsId: 'ansible-ssh-key', keyFileVariable: 'SSH_KEY'),
+                    file(credentialsId: 'ansible-vault-pass', variable: 'VAULT_PASS_FILE')
+                ]) {
+                    sh '''
+                        export ANSIBLE_PRIVATE_KEY_FILE="$SSH_KEY"
+                        export ANSIBLE_VAULT_PASSWORD_FILE="$VAULT_PASS_FILE"
+                        cd ansible
+                        ansible-playbook deploy.yml -e image_tag="$IMAGE_TAG"
+                    '''
+                }
+            }
+        }
+
+        stage('Smoke test') {
+            steps {
+                sh 'bash scripts/smoke-test.sh "$LB_URL" "$IMAGE_TAG"'
+            }
+        }
+    }
+
+    post {
+        success {
+            notifySlack('MANUAL_ROLLBACK', "Manual rollback: ${env.PREVIOUS_TAG ?: '?'} -> ${env.IMAGE_TAG}. " +
+                                       "The site is live and healthy.")
+        }
+        failure {
+            notifySlack('ROLLBACK_FAILED', "Manual rollback to ${env.IMAGE_TAG ?: params.VERSION} failed - check the build log.")
+        }
+    }
+}
+
+def notifySlack(String status, String text) {
+    try {
+        withCredentials([string(credentialsId: 'slack-webhook', variable: 'SLACK_WEBHOOK_URL')]) {
+            // The checked-out commit is only the pipeline code, not the deployed version.
+            withEnv(["NOTIFY_STATUS=${status}", "NOTIFY_TEXT=${text}", "NOTIFY_COMMIT_LABEL=Pipeline code from"]) {
+                sh 'bash ci/notify.sh'
+            }
+        }
+    } catch (err) {
+        echo "Slack notification skipped: ${err.getMessage()}"
+    }
+}

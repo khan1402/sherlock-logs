@@ -1,0 +1,14 @@
+# Jenkins plugins. Dependencies are downloaded automatically.
+configuration-as-code
+job-dsl
+workflow-aggregator
+git
+credentials-binding
+ssh-credentials
+plain-credentials
+timestamper
+ws-cleanup
+ansicolor
+pipeline-graph-view
+junit
+

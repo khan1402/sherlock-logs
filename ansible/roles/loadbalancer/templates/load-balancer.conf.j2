@@ -1,0 +1,27 @@
+# {{ ansible_managed }}
+# Built from inventory/hosts.yml: every host in 'webservers' becomes a backend.
+
+upstream web_servers {
+    {{ loadbalancer_method }};
+
+    # Passive health check: 3 failures within 10s -> skip that server for 10s.
+{% for host in groups['webservers'] %}
+    server {{ hostvars[host]['ansible_host'] }}:80 max_fails=3 fail_timeout=10s;  # {{ host }}
+{% endfor %}
+}
+
+server {
+    listen 80 default_server;
+    server_name {{ inventory_hostname }};
+
+    location / {
+        proxy_pass http://web_servers;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        # Shows which web server answered: curl -I http://192.168.56.10
+        add_header X-Upstream $upstream_addr always;
+    }
+}
+

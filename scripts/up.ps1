@@ -35,7 +35,7 @@ if (-not (Test-Path $vbox)) { Fail "VirtualBox is not installed (see README)." }
 if (-not (Test-Path ".vault_pass")) { Fail ".vault_pass is missing in the repo root (see README)." }
 
 function Get-ProjectVMs([string]$list = "vms") {
-    & $vbox list $list | ForEach-Object { ($_ -split '"')[1] } | Where-Object { $_ -like "alchemy-*" }
+    & $vbox list $list | ForEach-Object { ($_ -split '"')[1] } | Where-Object { $_ -like "sherlock-*" }
 }
 
 # --- 2. Optional: start from a blank slate --------------------------------------------
@@ -69,7 +69,7 @@ else {
         if ($running -contains $vm) { Write-Host "    $vm is already running" }
         else { Write-Host "    starting $vm"; & $vbox startvm $vm --type headless | Out-Null }
     }
-    if ($Bonus -and ($existing -notcontains "alchemy-backup-server")) {
+    if ($Bonus -and ($existing -notcontains "sherlock-backup-server")) {
         Write-Host "    NOTE: the bonus backup server was never created. Use: .\scripts\up.ps1 -Fresh -Bonus" -ForegroundColor Yellow
     }
 

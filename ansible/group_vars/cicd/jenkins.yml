@@ -1,8 +1,8 @@
 # Jenkins settings for this project (used by roles/jenkins).
 
 # The pipeline job and the repository it watches.
-jenkins_job_name: automation-alchemy
-jenkins_git_url: https://gitea.kood.tech/zeeshankhan/automation-alchemy.git
+jenkins_job_name: sherlock-logs
+jenkins_git_url: https://gitea.kood.tech/zeeshankhan/sherlock-logs.git
 jenkins_git_branch: main
 
 # "Track changes in Git": check for new commits every 1 minute.

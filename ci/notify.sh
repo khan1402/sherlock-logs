@@ -47,7 +47,7 @@ print(json.dumps({
             {"title": "Version", "value": env("IMAGE_TAG", "-") or "-", "short": True},
             {"title": env("NOTIFY_COMMIT_LABEL", "Commit"), "value": esc(env("NOTIFY_COMMIT", "")), "short": False},
         ],
-        "footer": "Jenkins - Automation Alchemy",
+        "footer": "Jenkins - Sherlock Logs",
     }],
 }))
 PY

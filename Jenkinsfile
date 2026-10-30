@@ -1,4 +1,4 @@
-// Jenkinsfile - Automation Alchemy CI/CD pipeline.
+// Jenkinsfile - Sherlock Logs CI/CD pipeline.
 //
 // Jenkins checks Gitea every minute. For every new commit:
 //   1. Version      - the short commit ID becomes the image tag (e.g. 3f2a1bc),
@@ -65,7 +65,7 @@ pipeline {
                     for component in backend frontend; do
                       docker build \
                         --build-arg APP_VERSION="$IMAGE_TAG" \
-                        --tag "$DOCKERHUB_USER/alchemy-$component:$IMAGE_TAG" \
+                        --tag "$DOCKERHUB_USER/sherlock-$component:$IMAGE_TAG" \
                         "app/$component"
                     done
                 '''
@@ -84,7 +84,7 @@ pipeline {
                         "$TRIVY_IMAGE" image --quiet --scanners vuln --ignore-unfixed "$@"
                     }
                     for component in backend frontend; do
-                      image="$DOCKERHUB_USER/alchemy-$component:$IMAGE_TAG"
+                      image="$DOCKERHUB_USER/sherlock-$component:$IMAGE_TAG"
                       echo "=== Trivy: $image - HIGH + CRITICAL (report only) ==="
                       trivy --severity HIGH,CRITICAL --exit-code 0 "$image"
                       echo "=== Trivy: $image - gate: fail on CRITICAL with a fix available ==="
@@ -105,7 +105,7 @@ pipeline {
                         # Retry: one dropped connection to Docker Hub must not fail the build.
                         # A push is safe to repeat - layers already uploaded are skipped.
                         for component in backend frontend; do
-                          image="$DOCKERHUB_USER/alchemy-$component:$IMAGE_TAG"
+                          image="$DOCKERHUB_USER/sherlock-$component:$IMAGE_TAG"
                           for attempt in 1 2 3; do
                             docker push "$image" && break
                             if [ "$attempt" -eq 3 ]; then
@@ -126,7 +126,7 @@ pipeline {
                       echo "built:    $(date -u +%Y-%m-%dT%H:%M:%SZ)"
                       echo "jenkins:  build #$BUILD_NUMBER"
                       for component in backend frontend; do
-                        echo "$component: $(docker image inspect --format '{{index .RepoDigests 0}}' "$DOCKERHUB_USER/alchemy-$component:$IMAGE_TAG")"
+                        echo "$component: $(docker image inspect --format '{{index .RepoDigests 0}}' "$DOCKERHUB_USER/sherlock-$component:$IMAGE_TAG")"
                       done
                     } > build-info.txt
                     cat build-info.txt

@@ -31,7 +31,7 @@
 
 - name: Stop cloud-init from overwriting hostname and /etc/hosts on reboot
   ansible.builtin.copy:
-    dest: /etc/cloud/cloud.cfg.d/99-automation-alchemy.cfg
+    dest: /etc/cloud/cloud.cfg.d/99-sherlock-logs.cfg
     content: |
       # Managed by Ansible: hostname and /etc/hosts are owned by the common role.
       preserve_hostname: true

@@ -54,12 +54,12 @@ if [[ "${GROUP}" == "cicd" ]]; then
   # build). The shared folder is world-writable, and Ansible refuses to load
   # ansible.cfg from a world-writable directory. Secrets and keys stay behind.
   # (rsync only creates the LAST folder of a path, so create the parents first.)
-  mkdir -p "${USER_HOME}/automation-alchemy"
+  mkdir -p "${USER_HOME}/sherlock-logs"
   rsync -r --delete \
     --exclude .git --exclude .vagrant --exclude keys --exclude .vault_pass \
-    /vagrant/ "${USER_HOME}/automation-alchemy/"
-  chown -R "${USER_NAME}:${USER_NAME}" "${USER_HOME}/automation-alchemy"
-  chmod -R u=rwX,go=rX "${USER_HOME}/automation-alchemy"
+    /vagrant/ "${USER_HOME}/sherlock-logs/"
+  chown -R "${USER_NAME}:${USER_NAME}" "${USER_HOME}/sherlock-logs"
+  chmod -R u=rwX,go=rX "${USER_HOME}/sherlock-logs"
 fi
 
 echo "==> [bootstrap] done"

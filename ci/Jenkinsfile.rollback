@@ -1,4 +1,4 @@
-// ci/Jenkinsfile.rollback - MANUAL rollback (job: automation-alchemy-rollback).
+// ci/Jenkinsfile.rollback - MANUAL rollback (job: sherlock-logs-rollback).
 //
 // "Build with Parameters" -> VERSION = an earlier commit ID (e.g. c551d65).
 // Deploys that version with the same deploy.yml, proves it is live through

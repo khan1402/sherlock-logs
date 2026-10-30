@@ -1,7 +1,7 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
 #
-# Automation Alchemy - Vagrantfile
+# Sherlock Logs - Vagrantfile
 #
 # Vagrant has ONE job: create the VMs (CPU, RAM, network, hostname) and give
 # each one a 'devops' user that Ansible can log into. Everything else
@@ -34,7 +34,7 @@ ENABLE_BONUS = ENV["ENABLE_BONUS"] == "true"
 unless File.exist?(KEY_PATH)
   Dir.mkdir(KEY_DIR) unless Dir.exist?(KEY_DIR)
   ok = system("ssh-keygen", "-t", "ed25519", "-N", "", "-q",
-              "-C", "ansible@automation-alchemy", "-f", KEY_PATH)
+              "-C", "ansible@sherlock-logs", "-f", KEY_PATH)
   abort "Could not generate SSH key with ssh-keygen. Is OpenSSH Client installed?" unless ok
 end
 
@@ -95,7 +95,7 @@ Vagrant.configure("2") do |config|
       end
 
       vm.vm.provider "virtualbox" do |vb|
-        vb.name         = "alchemy-#{node[:name]}"
+        vb.name         = "sherlock-#{node[:name]}"
         vb.memory       = node[:memory]
         vb.cpus         = node[:cpus]
         vb.linked_clone = true # clone from one base disk: faster + less disk space
@@ -109,7 +109,7 @@ Vagrant.configure("2") do |config|
       if node[:group] == "cicd"
         vm.vm.provision "shell", name: "ansible-site", privileged: false, inline: <<-SHELL
           set -e
-          sudo -u devops -H bash -c 'cd ~/automation-alchemy/ansible && ANSIBLE_FORCE_COLOR=1 ansible-playbook site.yml #{ANSIBLE_EXTRA}'
+          sudo -u devops -H bash -c 'cd ~/sherlock-logs/ansible && ANSIBLE_FORCE_COLOR=1 ansible-playbook site.yml #{ANSIBLE_EXTRA}'
         SHELL
       end
     end

@@ -18,6 +18,6 @@ fi
 
 rsync -r --delete \
   --exclude .git --exclude .vagrant --exclude keys --exclude .vault_pass --exclude reports \
-  /vagrant/ "${HOME}/automation-alchemy/"
-chmod -R u=rwX,go=rX "${HOME}/automation-alchemy"
-echo "Synced /vagrant -> ${HOME}/automation-alchemy"
+  /vagrant/ "${HOME}/sherlock-logs/"
+chmod -R u=rwX,go=rX "${HOME}/sherlock-logs"
+echo "Synced /vagrant -> ${HOME}/sherlock-logs"

@@ -17,13 +17,13 @@ ansible_become_password: "{{ vault_devops_password }}"
 enable_bonus: false
 
 # --- Application (Group 3) ----------------------------------------------------
-# Images live on Docker Hub: <dockerhub_user>/alchemy-backend and -frontend.
+# Images live on Docker Hub: <dockerhub_user>/sherlock-backend and -frontend.
 # The access token for pushing is vault_dockerhub_token in vault.yml.
 dockerhub_user: zeek14
 
 app_images:
-  backend: "{{ dockerhub_user }}/alchemy-backend"
-  frontend: "{{ dockerhub_user }}/alchemy-frontend"
+  backend: "{{ dockerhub_user }}/sherlock-backend"
+  frontend: "{{ dockerhub_user }}/sherlock-frontend"
 
 # Tag of the first image, built by site.yml itself (Jenkins builds later ones).
 app_initial_tag: initial

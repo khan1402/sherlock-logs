@@ -17,7 +17,7 @@ $vbox = Join-Path "$env:VBOX_MSI_INSTALL_PATH" "VBoxManage.exe"
 if (-not (Test-Path $vbox)) { Write-Host "ERROR: VirtualBox is not installed." -ForegroundColor Red; exit 1 }
 
 function Get-ProjectVMs([string]$list = "vms") {
-    & $vbox list $list | ForEach-Object { ($_ -split '"')[1] } | Where-Object { $_ -like "alchemy-*" }
+    & $vbox list $list | ForEach-Object { ($_ -split '"')[1] } | Where-Object { $_ -like "sherlock-*" }
 }
 
 if ($Destroy) {

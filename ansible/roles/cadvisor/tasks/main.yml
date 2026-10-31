@@ -1,0 +1,41 @@
+# roles/cadvisor - container metrics (CPU, memory, network, restarts) for Prometheus.
+#
+# cAdvisor runs as a container itself and reads the other containers' stats
+# from the host (cgroups in /sys, Docker's data in /var/lib/docker).
+
+# network_mode: host = cAdvisor listens on the VM's own port, so UFW controls
+# who can reach it. With published ports (-p 8081:8080), Docker would write its
+# own iptables rules and BYPASS UFW (Project 3 lesson).
+- name: Run cAdvisor {{ cadvisor_version }}
+  community.docker.docker_container:
+    name: cadvisor
+    image: "{{ cadvisor_image }}:{{ cadvisor_version }}"
+    network_mode: host
+    restart_policy: unless-stopped
+    # Needs to read kernel and cgroup data of ALL containers (cAdvisor docs).
+    privileged: true
+    devices:
+      - /dev/kmsg
+    # All host folders read-only, except /var/run (Docker socket).
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    command:
+      - "--port={{ cadvisor_port }}"
+      - "--housekeeping_interval={{ cadvisor_housekeeping_interval }}"
+      - "--docker_only=true"  # only containers, not every systemd service
+      - "--store_container_labels=false"  # keep metric labels small
+      - "--disable_metrics={{ cadvisor_disabled_metrics | join(',') }}"
+    state: started
+
+- name: Wait until cAdvisor answers
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ cadvisor_port }}/healthz"
+    status_code: 200
+  register: cadvisor_check
+  until: cadvisor_check.status == 200
+  retries: 15
+  delay: 2

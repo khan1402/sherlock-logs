@@ -1,0 +1,15 @@
+# Default values for the node_exporter role.
+
+# Pinned version: every VM runs exactly the same exporter. Change it here to upgrade.
+node_exporter_version: "1.9.1"
+node_exporter_port: 9100
+
+# x86_64 (what Ansible reports) -> amd64 (what the release files are called)
+node_exporter_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
+
+node_exporter_release_url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}"
+node_exporter_tarball: "node_exporter-{{ node_exporter_version }}.linux-{{ node_exporter_arch }}.tar.gz"
+
+# Each version gets its own folder; /usr/local/bin/node_exporter points to the
+# active one. Upgrading = new folder + move the link (old version stays for rollback).
+node_exporter_install_dir: "/opt/node_exporter/{{ node_exporter_version }}"

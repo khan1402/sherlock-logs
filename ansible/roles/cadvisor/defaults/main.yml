@@ -1,0 +1,27 @@
+# Default values for the cadvisor role.
+
+# Pinned image version: every Docker VM runs exactly the same cAdvisor.
+cadvisor_image: gcr.io/cadvisor/cadvisor
+cadvisor_version: v0.49.1
+
+# 8081, not cAdvisor's default 8080: Jenkins already uses 8080 on cicd-server.
+cadvisor_port: 8081
+
+# How often cAdvisor re-reads container stats. Prometheus scrapes every 15 s,
+# so collecting more often than that would only waste CPU.
+cadvisor_housekeeping_interval: 15s
+
+# Metric groups we never use. Turning them off makes cAdvisor lighter and
+# keeps Prometheus smaller. CPU, memory, network, disk I/O and process
+# metrics stay on (the Docker dashboard and alerts need them).
+cadvisor_disabled_metrics:
+  - percpu
+  - sched
+  - tcp
+  - udp
+  - advtcp
+  - hugetlb
+  - referenced_memory
+  - cpu_topology
+  - resctrl
+  - memory_numa

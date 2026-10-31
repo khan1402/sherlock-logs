@@ -1,0 +1,26 @@
+# {{ ansible_managed }}
+# Node Exporter - host metrics for Prometheus on port {{ node_exporter_port }}.
+# Reachable only from the monitoring VM (UFW rule in the firewall role).
+
+[Unit]
+Description=Prometheus Node Exporter
+Documentation=https://github.com/prometheus/node_exporter
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=node_exporter
+Group=node_exporter
+ExecStart=/usr/local/bin/node_exporter \
+  --web.listen-address=:{{ node_exporter_port }}
+Restart=on-failure
+RestartSec=5
+
+# Least privilege: the exporter only READS system information.
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

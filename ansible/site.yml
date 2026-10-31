@@ -9,6 +9,7 @@
 #   Group 2: hardening, firewall (cicd-server's firewall goes first, see below)
 #   Group 3: docker, image build, app deploy, load balancer
 #   Group 4: jenkins (configured as code with JCasC)
+#   Project 4 - Group 3: monitoring agents - Node Exporter (every VM), cAdvisor (Docker VMs)
 #   Group 9: bonus - fail2ban, backup server (only with -e enable_bonus=true)
 
 # Runs FIRST, before Ansible opens any SSH connection to the other VMs.
@@ -24,7 +25,7 @@
     - firewall
 
 - name: Baseline and security for every VM
-  # 'core' = the 5 required VMs. Bonus VMs are added only when enabled,
+  # 'core' = the 6 required VMs. Bonus VMs are added only when enabled,
   # so Ansible never tries to reach a VM that was not created.
   hosts: "core{{ ':backups' if enable_bonus | default(false) | bool else '' }}"
   roles:
@@ -33,10 +34,16 @@
     - firewall    # UFW: deny all, allow only what each VM needs
 
 - name: Container runtime
-  # cicd-server builds images; web + app servers run them.
-  hosts: webservers:appservers:cicd
+  # cicd-server builds images; web + app servers run them; the monitoring
+  # server runs the monitoring stack. 'docker_hosts' lists them (inventory).
+  hosts: docker_hosts
   roles:
     - docker
+
+# Agents right after Docker (cAdvisor runs as a container), so every VM is
+# measurable before the app and Jenkins are installed.
+- name: Monitoring agents
+  ansible.builtin.import_playbook: monitoring-agents.yml
 
 - name: Build and push the initial app images
   hosts: cicd

@@ -1,0 +1,18 @@
+# monitoring-agents.yml - the metric agents Prometheus pulls from (Project 4).
+#
+#   Called by site.yml (full setup) and by Jenkins on every pipeline run:
+#     ansible-playbook monitoring-agents.yml
+#
+# Safe to run any number of times. A VM that is new in the inventory gets its
+# agents on the next run - no full rebuild needed.
+
+- name: Host metrics - Node Exporter on every VM
+  # Bonus VMs only when enabled, so Ansible never tries to reach a missing VM.
+  hosts: "core{{ ':backups' if enable_bonus | default(false) | bool else '' }}"
+  roles:
+    - node_exporter
+
+- name: Container metrics - cAdvisor on every Docker VM
+  hosts: docker_hosts
+  roles:
+    - cadvisor

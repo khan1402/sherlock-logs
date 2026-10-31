@@ -1,0 +1,27 @@
+# Default values for the monitoring role (runs on monitoring-server only).
+
+# Everything for the stack lives here: docker-compose.yml + config files.
+monitoring_dir: /opt/monitoring
+
+# --- Pinned image versions (upgrade = change the number, re-run Ansible) -------
+monitoring_prometheus_image: prom/prometheus:v3.5.0  # 3.5 = long-term support release
+monitoring_grafana_image: grafana/grafana:12.1.0
+
+# --- Ports (must match group_vars/monitoring/firewall.yml) ---------------------
+monitoring_prometheus_port: 9090
+monitoring_grafana_port: 3000
+
+# --- Prometheus -------------------------------------------------------------------
+# How often Prometheus pulls metrics from every target. 15 s is the common
+# default: fresh enough for 5-minute alerts, light enough for small VMs.
+monitoring_scrape_interval: 15s
+# How often alert/recording rules are evaluated.
+monitoring_evaluation_interval: 15s
+# Long-term retention: data is deleted when EITHER limit is reached first.
+monitoring_retention_time: 15d
+monitoring_retention_size: 5GB
+
+# --- Grafana --------------------------------------------------------------------
+monitoring_grafana_admin_user: admin
+# Real value lives in the encrypted vault.yml.
+monitoring_grafana_admin_password: "{{ vault_grafana_admin_password }}"

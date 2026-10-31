@@ -1,0 +1,21 @@
+# {{ ansible_managed }}
+# Grafana data sources - created automatically when Grafana starts
+# ("provisioning"), so nobody has to click them together in the UI.
+#
+# The fixed uid lets dashboards (Group 6) and alert rules (Group 7) point
+# at "prometheus" and keep working after every rebuild.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy  # Grafana's server queries Prometheus, not the browser
+    # Both containers use the VM's network (network_mode: host), so
+    # Prometheus is simply localhost from Grafana's point of view.
+    url: http://localhost:{{ monitoring_prometheus_port }}
+    isDefault: true
+    editable: false  # changes only through code, not the UI
+    jsonData:
+      timeInterval: {{ monitoring_scrape_interval }}  # = scrape interval, keeps graphs accurate

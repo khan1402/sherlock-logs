@@ -10,6 +10,7 @@
 #   Group 3: docker, image build, app deploy, load balancer
 #   Group 4: jenkins (configured as code with JCasC)
 #   Project 4 - Group 3: monitoring agents - Node Exporter (every VM), cAdvisor (Docker VMs)
+#   Project 4 - Group 4: monitoring stack - Prometheus + Grafana on monitoring-server
 #   Group 9: bonus - fail2ban, backup server (only with -e enable_bonus=true)
 
 # Runs FIRST, before Ansible opens any SSH connection to the other VMs.
@@ -44,6 +45,12 @@
 # measurable before the app and Jenkins are installed.
 - name: Monitoring agents
   ansible.builtin.import_playbook: monitoring-agents.yml
+# The monitoring stack comes up BEFORE the app and Jenkins, so it already
+# watches the first deploy.
+- name: Monitoring stack
+  hosts: monitoring
+  roles:
+    - monitoring
 
 - name: Build and push the initial app images
   hosts: cicd

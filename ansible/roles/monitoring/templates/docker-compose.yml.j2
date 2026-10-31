@@ -1,0 +1,60 @@
+# {{ ansible_managed }}
+# The monitoring stack on {{ inventory_hostname }}.
+#
+#   Group 4: Prometheus (collects + stores metrics), Grafana (shows them)
+#   Group 5 adds Elasticsearch, Logstash and Kibana to this same file.
+#
+# network_mode: host on every exposed service: the containers use the VM's own
+# ports, so UFW decides who may connect. Published ports (-p) would make
+# Docker write its own iptables rules and BYPASS UFW (Project 3 lesson).
+#
+# Data lives in named Docker volumes: it survives container upgrades and
+# restarts, and Docker sets the right file owner automatically.
+
+name: monitoring
+
+services:
+  prometheus:
+    image: {{ monitoring_prometheus_image }}
+    container_name: prometheus
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # Long-term retention: whichever limit is reached first.
+      - --storage.tsdb.retention.time={{ monitoring_retention_time }}
+      - --storage.tsdb.retention.size={{ monitoring_retention_size }}
+      - --web.listen-address=:{{ monitoring_prometheus_port }}
+      # Allows "reload config" via HTTP (POST /-/reload) - no restart, no data gap.
+      - --web.enable-lifecycle
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+
+  grafana:
+    image: {{ monitoring_grafana_image }}
+    container_name: grafana
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      - prometheus
+    environment:
+      GF_SERVER_HTTP_PORT: "{{ monitoring_grafana_port }}"
+      # Admin login. NOTE: only applied when Grafana starts for the FIRST time
+      # (empty database). To change it later: grafana cli admin reset-admin-password.
+      GF_SECURITY_ADMIN_USER: "{{ monitoring_grafana_admin_user }}"
+      # replace + to_json: '$' is doubled (Compose would read it as a variable)
+      # and the value is safely quoted, whatever characters the password has.
+      GF_SECURITY_ADMIN_PASSWORD: {{ monitoring_grafana_admin_password | replace('$', '$$') | to_json }}
+      GF_USERS_ALLOW_SIGN_UP: "false"          # nobody can create their own account
+      GF_AUTH_ANONYMOUS_ENABLED: "false"       # no viewing without login
+      GF_ANALYTICS_REPORTING_ENABLED: "false"  # no usage data sent to Grafana Labs
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+
+volumes:
+  prometheus-data:
+  grafana-data:

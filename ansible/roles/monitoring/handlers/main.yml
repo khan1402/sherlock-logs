@@ -1,0 +1,19 @@
+# Prometheus re-reads its config through its HTTP API: no restart, no gap
+# in the collected data. Retries cover a container that is still starting.
+- name: Reload prometheus
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_prometheus_port }}/-/reload"
+    method: POST
+    status_code: 200
+  register: monitoring_prometheus_reload
+  until: monitoring_prometheus_reload.status == 200
+  retries: 15
+  delay: 2
+
+# Grafana reads provisioning files only at startup, so it needs a restart.
+- name: Restart grafana
+  community.docker.docker_compose_v2:
+    project_src: "{{ monitoring_dir }}"
+    services:
+      - grafana
+    state: restarted

@@ -1,0 +1,93 @@
+# roles/monitoring - the monitoring stack on monitoring-server, run with Docker Compose.
+#
+#   Group 4: Prometheus + Grafana
+#   Group 5: + Elasticsearch, Logstash, Kibana
+#
+# Ansible renders the config files, Docker Compose starts the containers,
+# then Ansible waits until every service really answers.
+
+# --- Folders ----------------------------------------------------------------------
+# Mode set explicitly on EVERY folder: with the hardened umask 027, folders
+# would be 0750 and the containers' own users (Prometheus = nobody,
+# Grafana = 472) could not read their config files (Project 1 lesson).
+- name: Create the monitoring folders
+  ansible.builtin.file:
+    path: "{{ monitoring_dir }}/{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - ""
+    - prometheus
+    - grafana
+    - grafana/provisioning
+    - grafana/provisioning/datasources
+
+# --- Config files -------------------------------------------------------------------
+# validate: Prometheus' own checker (promtool) tests the new file BEFORE it
+# replaces the old one. A typo fails the Ansible run instead of breaking a
+# running Prometheus. (--user root: the temp file Ansible checks is root-only.)
+- name: Prometheus config - scrape targets from the inventory
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: "{{ monitoring_dir }}/prometheus/prometheus.yml"
+    owner: root
+    group: root
+    mode: "0644"
+    validate: >-
+      docker run --rm --user root --entrypoint promtool
+      -v %s:/tmp/prometheus.yml:ro {{ monitoring_prometheus_image }}
+      check config /tmp/prometheus.yml
+  notify: Reload prometheus
+
+- name: Grafana data source - Prometheus
+  ansible.builtin.template:
+    src: grafana/datasources.yml.j2
+    dest: "{{ monitoring_dir }}/grafana/provisioning/datasources/datasources.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart grafana
+
+# 0600: this file contains the Grafana admin password. Only root (and Docker,
+# which runs as root) needs to read it.
+- name: Docker Compose file for the stack
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ monitoring_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0600"
+
+# --- Start ----------------------------------------------------------------------------
+# Like 'docker compose up -d': creates missing containers and re-creates only
+# the ones whose settings changed. Running it again changes nothing.
+- name: Start the monitoring stack
+  community.docker.docker_compose_v2:
+    project_src: "{{ monitoring_dir }}"
+    state: present
+    pull: missing
+
+# Apply pending config reloads/restarts NOW, so the checks below test them.
+- name: Apply pending reloads and restarts
+  ansible.builtin.meta: flush_handlers
+
+# --- Health checks --------------------------------------------------------------------
+- name: Wait until Prometheus is ready
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_prometheus_port }}/-/ready"
+    status_code: 200
+  register: monitoring_prometheus_ready
+  until: monitoring_prometheus_ready.status == 200
+  retries: 30
+  delay: 2
+
+- name: Wait until Grafana is ready
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_grafana_port }}/api/health"
+    status_code: 200
+  register: monitoring_grafana_ready
+  until: monitoring_grafana_ready.status == 200
+  retries: 30
+  delay: 2

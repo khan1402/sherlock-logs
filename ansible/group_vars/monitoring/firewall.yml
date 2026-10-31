@@ -1,0 +1,19 @@
+# Monitoring VM (Project 4).
+#   - The web UIs are for the admin laptop only.
+#   - Logstash accepts logs from Filebeat on every project VM.
+#   - Elasticsearch (9200) is NOT opened: only Logstash and Kibana talk to it,
+#     inside Docker on this VM, so nobody else can read or delete the logs.
+
+firewall_rules:
+  - port: 3000
+    sources: ["{{ admin_ip }}"]
+    comment: Grafana UI from admin laptop
+  - port: 5601
+    sources: ["{{ admin_ip }}"]
+    comment: Kibana UI from admin laptop
+  - port: 9090
+    sources: ["{{ admin_ip }}"]
+    comment: Prometheus UI from admin laptop
+  - port: 5044
+    sources: "{{ groups['core'] | map('extract', hostvars, 'ansible_host') | list }}"
+    comment: Filebeat -> Logstash from project VMs

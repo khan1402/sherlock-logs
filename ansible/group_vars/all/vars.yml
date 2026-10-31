@@ -30,3 +30,7 @@ app_initial_tag: initial
 
 # The frontend calls the backend here (first host in 'appservers').
 app_backend_url: "http://{{ hostvars[groups['appservers'][0]]['ansible_host'] }}:3000"
+# --- Monitoring and logging (Project 4) -----------------------------------------
+# The monitoring VM's IP, read from the inventory (first host in 'monitoring').
+# Firewall rules use it: only this VM may scrape metrics from the others.
+monitoring_ip: "{{ hostvars[groups['monitoring'][0]]['ansible_host'] }}"

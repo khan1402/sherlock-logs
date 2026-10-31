@@ -1,6 +1,11 @@
 # Jenkins UI: reachable from your laptop only (same rule as SSH).
 # The app itself is still reachable only through the load balancer.
+# Project 4: cAdvisor runs on 8081, because Jenkins already uses 8080.
+
 firewall_rules:
   - port: 8080
     sources: ["{{ admin_ip }}"]
     comment: Jenkins UI from admin laptop
+  - port: 8081
+    sources: ["{{ monitoring_ip }}"]
+    comment: cAdvisor from monitoring

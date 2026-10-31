@@ -1,5 +1,13 @@
 # Web servers only accept HTTP from the load balancer(s).
+# Project 4: the monitoring VM may also scrape metrics.
+
 firewall_rules:
   - port: 80
     sources: "{{ groups['loadbalancers'] | map('extract', hostvars, 'ansible_host') | list }}"
     comment: HTTP from load balancer
+  - port: 80
+    sources: ["{{ monitoring_ip }}"]
+    comment: Frontend /metrics from monitoring
+  - port: 8081
+    sources: ["{{ monitoring_ip }}"]
+    comment: cAdvisor from monitoring

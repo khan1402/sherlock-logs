@@ -50,7 +50,7 @@ if ($Bonus) { $env:ENABLE_BONUS = "true" } else { Remove-Item Env:ENABLE_BONUS -
 
 # --- 3. Forget old SSH host keys ----------------------------------------------------
 # Rebuilt VMs get NEW host keys on the SAME IPs; old entries would make SSH refuse.
-10..15 | ForEach-Object { ssh-keygen -R "192.168.56.$_" 2>&1 | Out-Null }
+10..16 | ForEach-Object { ssh-keygen -R "192.168.56.$_" 2>&1 | Out-Null }
 
 # --- 4. Create or boot ----------------------------------------------------------------
 $existing = @(Get-ProjectVMs)

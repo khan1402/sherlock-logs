@@ -1,6 +1,13 @@
 # The backend only accepts API calls from the web servers.
+# Project 4: the monitoring VM may also scrape metrics.
 
 firewall_rules:
   - port: 3000
     sources: "{{ groups['webservers'] | map('extract', hostvars, 'ansible_host') | list }}"
     comment: API from web servers
+  - port: 3000
+    sources: ["{{ monitoring_ip }}"]
+    comment: Backend /metrics from monitoring
+  - port: 8081
+    sources: ["{{ monitoring_ip }}"]
+    comment: cAdvisor from monitoring

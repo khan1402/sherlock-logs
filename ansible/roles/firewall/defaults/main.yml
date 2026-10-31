@@ -20,7 +20,12 @@ firewall_ssh_sources: >-
      + ([firewall_backup_server_ip]
         if (enable_bonus | bool) and inventory_hostname not in groups['backups']
         else []) }}
-
+# Rules for EVERY VM (Project 4): Prometheus on the monitoring VM pulls host
+# metrics (CPU, memory, disk, network) from Node Exporter on each VM.
+firewall_base_rules:
+  - port: 9100
+    sources: ["{{ monitoring_ip }}"]
+    comment: Node Exporter from monitoring
 # Extra rules per group, set in group_vars/<group>/firewall.yml. Example:
 #   firewall_rules:
 #     - port: 80

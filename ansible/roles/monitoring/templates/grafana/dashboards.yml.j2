@@ -1,0 +1,18 @@
+# {{ ansible_managed }}
+# Grafana dashboard provider: load every JSON file in /etc/grafana/dashboards
+# (the role's files/grafana-dashboards/ folder) when Grafana starts.
+#
+# Grafana re-reads the folder every 30 seconds, so a changed or new dashboard
+# file appears without restarting Grafana.
+
+apiVersion: 1
+
+providers:
+  - name: sherlock-logs
+    folder: Sherlock Logs        # all project dashboards in one folder
+    type: file
+    disableDeletion: true        # nobody can delete them in the UI
+    allowUiUpdates: false        # the files in Git are the only source of truth
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/dashboards

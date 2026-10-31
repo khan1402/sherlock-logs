@@ -2,6 +2,7 @@
 #
 #   Group 4: Prometheus + Grafana (metrics)
 #   Group 5: Elasticsearch x2 + Logstash + Kibana (logs)
+#   Group 6: dashboards - Grafana (JSON files) and Kibana (imported via its API)
 #
 # Order: configs -> Elasticsearch first -> index settings -> everything else
 # -> wait until every service really answers.
@@ -34,6 +35,8 @@
     - grafana
     - grafana/provisioning
     - grafana/provisioning/datasources
+    - grafana/provisioning/dashboards
+    - grafana/dashboards
     - logstash
     - logstash/pipeline
 
@@ -62,6 +65,26 @@
     group: root
     mode: "0644"
   notify: Restart grafana
+
+- name: Grafana dashboard provider - load dashboards from files
+  ansible.builtin.template:
+    src: grafana/dashboards.yml.j2
+    dest: "{{ monitoring_dir }}/grafana/provisioning/dashboards/dashboards.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart grafana
+
+# The 3 dashboards as JSON files. No restart needed: Grafana re-reads the
+# folder every 30 seconds.
+- name: Grafana dashboards - VM performance, Docker containers, application
+  ansible.builtin.copy:
+    src: grafana-dashboards/
+    dest: "{{ monitoring_dir }}/grafana/dashboards/"
+    owner: root
+    group: root
+    mode: "0644"
+    directory_mode: "0755"
 
 # Logstash checks the pipeline syntax and exits (~30-60 s, only when the file changed).
 # No handler needed afterwards: Logstash reloads the pipeline automatically.
@@ -129,7 +152,10 @@
               delete: {}
   changed_when: false
 
-- name: Index template - 1 shard, 1 replica, retention policy
+# Mappings: text fields (e.g. "message") are searchable word by word; every
+# other text value (VM name, container, level, path...) is stored as an exact
+# "keyword", so Kibana can count, group and filter by it directly.
+- name: Index template - 1 shard, 1 replica, retention policy, field types
   ansible.builtin.uri:
     url: "http://127.0.0.1:{{ monitoring_es01_port }}/_index_template/sherlock-logs"
     method: PUT
@@ -142,6 +168,19 @@
           number_of_shards: 1
           number_of_replicas: 1  # the copy on the other node (needed for the yellow test)
           index.lifecycle.name: sherlock-logs-retention
+        mappings:
+          dynamic_templates:
+            - strings_as_keywords:
+                match_mapping_type: string
+                unmatch: message  # every field called "message" stays full-text
+                mapping:
+                  type: keyword
+                  ignore_above: 1024
+          properties:
+            "@timestamp":
+              type: date
+            message:
+              type: text
   changed_when: false
 
 # --- Everything else -----------------------------------------------------------------------
@@ -191,3 +230,26 @@
   until: monitoring_kibana_ready.status == 200
   retries: 60
   delay: 5
+
+# --- Kibana dashboards (Group 6) ---------------------------------------------------------
+# One file holds the data views, saved searches, visualizations and the 3
+# dashboards. Ansible uploads it from the role's files/ folder to Kibana's
+# import API. overwrite=true: running it again replaces them with the Git version.
+- name: Kibana dashboards - system, application, Docker logs
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_kibana_port }}/api/saved_objects/_import?overwrite=true"
+    method: POST
+    headers:
+      kbn-xsrf: "true"  # Kibana requires this header on every change (CSRF protection)
+    body_format: form-multipart
+    body:
+      file:
+        filename: kibana/dashboards.ndjson
+        mime_type: application/ndjson
+  register: monitoring_kibana_import
+  changed_when: false
+  # Kibana answers 200 even when single objects fail - so check "success" too,
+  # and show its error list if anything went wrong.
+  failed_when: >-
+    monitoring_kibana_import.status != 200
+    or not (monitoring_kibana_import.json.success | default(false))

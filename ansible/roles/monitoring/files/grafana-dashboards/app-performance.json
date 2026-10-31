@@ -1,0 +1,277 @@
+{
+  "uid": "app-performance",
+  "title": "Application Performance",
+  "description": "The app's own metrics: request rate, error rate, response times, and the custom metrics.",
+  "tags": ["sherlock-logs", "application"],
+  "editable": false,
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": {"from": "now-1h", "to": "now"},
+  "schemaVersion": 39,
+  "version": 1,
+  "templating": {"list": []},
+  "panels": [
+    {
+      "type": "row",
+      "title": "Overview",
+      "collapsed": false,
+      "gridPos": {"x": 0, "y": 0, "w": 24, "h": 1},
+      "panels": [],
+      "id": 1
+    },
+    {
+      "type": "stat",
+      "title": "App targets up",
+      "description": "Backend + frontend instances Prometheus can scrape.",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 0, "y": 1, "w": 6, "h": 4},
+      "fieldConfig": {
+        "defaults": {"unit": "none", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}},
+        "overrides": []
+      },
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background", "graphMode": "none"},
+      "targets": [{"refId": "A", "expr": "sum(up{job=~\"backend|frontend\"})", "legendFormat": "", "instant": true}],
+      "id": 2
+    },
+    {
+      "type": "stat",
+      "title": "Requests per second",
+      "description": "",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 6, "y": 1, "w": 6, "h": 4},
+      "fieldConfig": {
+        "defaults": {"unit": "reqps", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}},
+        "overrides": []
+      },
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background", "graphMode": "none"},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(http_requests_total{job=~\"backend|frontend\"}[5m]))",
+          "legendFormat": "",
+          "instant": true
+        }
+      ],
+      "id": 3
+    },
+    {
+      "type": "stat",
+      "title": "Error rate (5xx)",
+      "description": "",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 12, "y": 1, "w": 6, "h": 4},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 5}]
+          }
+        },
+        "overrides": []
+      },
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background", "graphMode": "none"},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * sum(rate(http_requests_total{job=~\"backend|frontend\",status=\"5xx\"}[5m])) / sum(rate(http_requests_total{job=~\"backend|frontend\"}[5m])) or vector(0)",
+          "legendFormat": "",
+          "instant": true
+        }
+      ],
+      "id": 4
+    },
+    {
+      "type": "stat",
+      "title": "Response time p95",
+      "description": "95% of requests were faster than this.",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 18, "y": 1, "w": 6, "h": 4},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 2}]
+          }
+        },
+        "overrides": []
+      },
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background", "graphMode": "none"},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{job=~\"backend|frontend\"}[5m])))",
+          "legendFormat": "",
+          "instant": true
+        }
+      ],
+      "id": 5
+    },
+    {
+      "type": "row",
+      "title": "Traffic and errors",
+      "collapsed": false,
+      "gridPos": {"x": 0, "y": 5, "w": 24, "h": 1},
+      "panels": [],
+      "id": 6
+    },
+    {
+      "type": "timeseries",
+      "title": "Requests per second by service",
+      "description": "",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 0, "y": 6, "w": 12, "h": 8},
+      "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"fillOpacity": 10, "showPoints": "never"}}, "overrides": []},
+      "options": {
+        "legend": {"displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"]},
+        "tooltip": {"mode": "multi", "sort": "desc"}
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (job) (rate(http_requests_total{job=~\"backend|frontend\"}[$__rate_interval]))",
+          "legendFormat": "{{job}}"
+        }
+      ],
+      "id": 7
+    },
+    {
+      "type": "timeseries",
+      "title": "Error rate by service",
+      "description": "Share of requests that failed. 5xx = server error, 4xx = bad request.",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 12, "y": 6, "w": 12, "h": 8},
+      "fieldConfig": {"defaults": {"unit": "percent", "custom": {"fillOpacity": 10, "showPoints": "never"}}, "overrides": []},
+      "options": {
+        "legend": {"displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"]},
+        "tooltip": {"mode": "multi", "sort": "desc"}
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * sum by (job) (rate(http_requests_total{job=~\"backend|frontend\",status=\"5xx\"}[$__rate_interval])) / sum by (job) (rate(http_requests_total{job=~\"backend|frontend\"}[$__rate_interval]))",
+          "legendFormat": "{{job}} 5xx"
+        },
+        {
+          "refId": "B",
+          "expr": "100 * sum by (job) (rate(http_requests_total{job=~\"backend|frontend\",status=\"4xx\"}[$__rate_interval])) / sum by (job) (rate(http_requests_total{job=~\"backend|frontend\"}[$__rate_interval]))",
+          "legendFormat": "{{job}} 4xx"
+        }
+      ],
+      "id": 8
+    },
+    {
+      "type": "row",
+      "title": "Response times",
+      "collapsed": false,
+      "gridPos": {"x": 0, "y": 14, "w": 24, "h": 1},
+      "panels": [],
+      "id": 9
+    },
+    {
+      "type": "timeseries",
+      "title": "Response time percentiles",
+      "description": "p95 = 95% of requests were faster than this line.",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 0, "y": 15, "w": 12, "h": 8},
+      "fieldConfig": {"defaults": {"unit": "s", "custom": {"fillOpacity": 10, "showPoints": "never"}}, "overrides": []},
+      "options": {
+        "legend": {"displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"]},
+        "tooltip": {"mode": "multi", "sort": "desc"}
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le, job) (rate(http_request_duration_seconds_bucket{job=~\"backend|frontend\"}[$__rate_interval])))",
+          "legendFormat": "{{job}} p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le, job) (rate(http_request_duration_seconds_bucket{job=~\"backend|frontend\"}[$__rate_interval])))",
+          "legendFormat": "{{job}} p95"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum by (le, job) (rate(http_request_duration_seconds_bucket{job=~\"backend|frontend\"}[$__rate_interval])))",
+          "legendFormat": "{{job}} p99"
+        }
+      ],
+      "id": 10
+    },
+    {
+      "type": "timeseries",
+      "title": "Average response time by endpoint",
+      "description": "",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 12, "y": 15, "w": 12, "h": 8},
+      "fieldConfig": {"defaults": {"unit": "s", "custom": {"fillOpacity": 10, "showPoints": "never"}}, "overrides": []},
+      "options": {
+        "legend": {"displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"]},
+        "tooltip": {"mode": "multi", "sort": "desc"}
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (job, handler) (rate(http_request_duration_seconds_sum{job=~\"backend|frontend\"}[$__rate_interval])) / sum by (job, handler) (rate(http_request_duration_seconds_count{job=~\"backend|frontend\"}[$__rate_interval]))",
+          "legendFormat": "{{job}} {{handler}}"
+        }
+      ],
+      "id": 11
+    },
+    {
+      "type": "row",
+      "title": "Custom application metrics",
+      "collapsed": false,
+      "gridPos": {"x": 0, "y": 23, "w": 24, "h": 1},
+      "panels": [],
+      "id": 12
+    },
+    {
+      "type": "timeseries",
+      "title": "Backend: time to collect system facts (metrics_collect_seconds)",
+      "description": "Custom histogram in the backend. Most of it is the 1-second CPU measurement.",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 0, "y": 24, "w": 12, "h": 8},
+      "fieldConfig": {"defaults": {"unit": "s", "custom": {"fillOpacity": 10, "showPoints": "never"}}, "overrides": []},
+      "options": {
+        "legend": {"displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"]},
+        "tooltip": {"mode": "multi", "sort": "desc"}
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(metrics_collect_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "p95"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(metrics_collect_seconds_sum[$__rate_interval])) / sum(rate(metrics_collect_seconds_count[$__rate_interval]))",
+          "legendFormat": "average"
+        }
+      ],
+      "id": 13
+    },
+    {
+      "type": "timeseries",
+      "title": "Frontend: failed backend calls (frontend_backend_errors_total)",
+      "description": "Custom counter in the frontend: backend calls that failed in the last 5 minutes, by reason.",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 12, "y": 24, "w": 12, "h": 8},
+      "fieldConfig": {"defaults": {"unit": "none", "custom": {"fillOpacity": 10, "showPoints": "never"}}, "overrides": []},
+      "options": {
+        "legend": {"displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"]},
+        "tooltip": {"mode": "multi", "sort": "desc"}
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (instance, reason) (increase(frontend_backend_errors_total[5m]))",
+          "legendFormat": "{{instance}} {{reason}}"
+        }
+      ],
+      "id": 14
+    }
+  ],
+  "annotations": {"list": []}
+}

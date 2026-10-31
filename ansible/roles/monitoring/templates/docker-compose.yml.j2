@@ -59,6 +59,7 @@ services:
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro  # dashboard JSON files 
       - grafana-data:/var/lib/grafana
 
   # --- Logs ---------------------------------------------------------------------------

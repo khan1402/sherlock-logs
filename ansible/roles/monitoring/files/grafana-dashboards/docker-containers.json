@@ -1,0 +1,264 @@
+{
+  "uid": "docker-containers",
+  "title": "Docker Containers",
+  "description": "Container metrics from cAdvisor on every Docker VM: health, CPU, memory, restarts.",
+  "tags": ["sherlock-logs", "docker", "cadvisor"],
+  "editable": false,
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": {"from": "now-1h", "to": "now"},
+  "schemaVersion": 39,
+  "version": 1,
+  "templating": {
+    "list": [
+      {
+        "name": "instance",
+        "label": "VM",
+        "type": "query",
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "query": {"query": "label_values(up{job=\"cadvisor\"}, instance)", "refId": "V"},
+        "definition": "label_values(up{job=\"cadvisor\"}, instance)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {"selected": true, "text": ["All"], "value": ["$__all"]},
+        "sort": 1
+      },
+      {
+        "name": "container",
+        "label": "Container",
+        "type": "query",
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "query": {"query": "label_values(container_last_seen{name!=\"\"}, name)", "refId": "V"},
+        "definition": "label_values(container_last_seen{name!=\"\"}, name)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {"selected": true, "text": ["All"], "value": ["$__all"]},
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Health",
+      "collapsed": false,
+      "gridPos": {"x": 0, "y": 0, "w": 24, "h": 1},
+      "panels": [],
+      "id": 1
+    },
+    {
+      "type": "stat",
+      "title": "Running containers",
+      "description": "Containers cAdvisor currently sees.",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 0, "y": 1, "w": 6, "h": 4},
+      "fieldConfig": {
+        "defaults": {"unit": "none", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}},
+        "overrides": []
+      },
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background", "graphMode": "none"},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count(count by (instance, name) (container_last_seen{name!=\"\",instance=~\"$instance\",name=~\"$container\"}))",
+          "legendFormat": "",
+          "instant": true
+        }
+      ],
+      "id": 2
+    },
+    {
+      "type": "stat",
+      "title": "Restarts (last 15 min)",
+      "description": "Each restart changes the container's start time. Alert: more than 3 for one container in 15 minutes.",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 6, "y": 1, "w": 6, "h": 4},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 4}]
+          }
+        },
+        "overrides": []
+      },
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background", "graphMode": "none"},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(changes(container_start_time_seconds{name!=\"\",instance=~\"$instance\",name=~\"$container\"}[15m])) or vector(0)",
+          "legendFormat": "",
+          "instant": true
+        }
+      ],
+      "id": 3
+    },
+    {
+      "type": "stat",
+      "title": "cAdvisor targets up",
+      "description": "Docker VMs whose container metrics Prometheus receives.",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 12, "y": 1, "w": 6, "h": 4},
+      "fieldConfig": {
+        "defaults": {"unit": "none", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}},
+        "overrides": []
+      },
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background", "graphMode": "none"},
+      "targets": [{"refId": "A", "expr": "sum(up{job=\"cadvisor\"})", "legendFormat": "", "instant": true}],
+      "id": 4
+    },
+    {
+      "type": "stat",
+      "title": "Highest memory vs limit",
+      "description": "The container closest to its memory limit. Alert: above 80%. Only containers WITH a limit count.",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 18, "y": 1, "w": 6, "h": 4},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "orange", "value": 70},
+              {"color": "red", "value": 80}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background", "graphMode": "none"},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(container_memory_working_set_bytes{name!=\"\",instance=~\"$instance\",name=~\"$container\"} / (container_spec_memory_limit_bytes{name!=\"\",instance=~\"$instance\",name=~\"$container\"} > 0)) * 100 or vector(0)",
+          "legendFormat": "",
+          "instant": true
+        }
+      ],
+      "id": 5
+    },
+    {
+      "type": "table",
+      "title": "Container status",
+      "description": "Uptime (seconds since start) and restarts in the last hour, per container.",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 0, "y": 5, "w": 24, "h": 8},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {"showHeader": true},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "time() - max by (instance, name, image) (container_start_time_seconds{name!=\"\",instance=~\"$instance\",name=~\"$container\"})",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "expr": "max by (instance, name, image) (changes(container_start_time_seconds{name!=\"\",instance=~\"$instance\",name=~\"$container\"}[1h]))",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "transformations": [{"id": "merge", "options": {}}, {"id": "organize", "options": {"excludeByName": {"Time": true}}}],
+      "id": 6
+    },
+    {
+      "type": "row",
+      "title": "Resources",
+      "collapsed": false,
+      "gridPos": {"x": 0, "y": 13, "w": 24, "h": 1},
+      "panels": [],
+      "id": 7
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU per container",
+      "description": "100% = one full CPU core.",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 0, "y": 14, "w": 12, "h": 8},
+      "fieldConfig": {"defaults": {"unit": "percent", "custom": {"fillOpacity": 10, "showPoints": "never"}}, "overrides": []},
+      "options": {
+        "legend": {"displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"]},
+        "tooltip": {"mode": "multi", "sort": "desc"}
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (instance, name) (rate(container_cpu_usage_seconds_total{name!=\"\",instance=~\"$instance\",name=~\"$container\"}[$__rate_interval])) * 100",
+          "legendFormat": "{{instance}} / {{name}}"
+        }
+      ],
+      "id": 8
+    },
+    {
+      "type": "timeseries",
+      "title": "Memory per container",
+      "description": "Working set = memory the container really uses (what the kernel's OOM limit checks).",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 12, "y": 14, "w": 12, "h": 8},
+      "fieldConfig": {"defaults": {"unit": "bytes", "custom": {"fillOpacity": 10, "showPoints": "never"}}, "overrides": []},
+      "options": {
+        "legend": {"displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"]},
+        "tooltip": {"mode": "multi", "sort": "desc"}
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (instance, name) (container_memory_working_set_bytes{name!=\"\",instance=~\"$instance\",name=~\"$container\"})",
+          "legendFormat": "{{instance}} / {{name}}"
+        }
+      ],
+      "id": 9
+    },
+    {
+      "type": "timeseries",
+      "title": "Memory vs limit (containers with a limit)",
+      "description": "Alert: above 80% of the container's own memory limit.",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 0, "y": 22, "w": 12, "h": 8},
+      "fieldConfig": {
+        "defaults": {"unit": "percent", "custom": {"fillOpacity": 10, "showPoints": "never"}, "min": 0, "max": 100},
+        "overrides": []
+      },
+      "options": {
+        "legend": {"displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"]},
+        "tooltip": {"mode": "multi", "sort": "desc"}
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "container_memory_working_set_bytes{name!=\"\",instance=~\"$instance\",name=~\"$container\"} / (container_spec_memory_limit_bytes{name!=\"\",instance=~\"$instance\",name=~\"$container\"} > 0) * 100",
+          "legendFormat": "{{instance}} / {{name}}"
+        }
+      ],
+      "id": 10
+    },
+    {
+      "type": "timeseries",
+      "title": "Restarts (last 15 min, per container)",
+      "description": "Alert: more than 3 restarts in 15 minutes.",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 12, "y": 22, "w": 12, "h": 8},
+      "fieldConfig": {"defaults": {"unit": "none", "custom": {"fillOpacity": 10, "showPoints": "never"}}, "overrides": []},
+      "options": {
+        "legend": {"displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"]},
+        "tooltip": {"mode": "multi", "sort": "desc"}
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "changes(container_start_time_seconds{name!=\"\",instance=~\"$instance\",name=~\"$container\"}[15m])",
+          "legendFormat": "{{instance}} / {{name}}"
+        }
+      ],
+      "id": 11
+    }
+  ],
+  "annotations": {"list": []}
+}

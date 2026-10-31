@@ -1,12 +1,17 @@
 # {{ ansible_managed }}
 # The monitoring stack on {{ inventory_hostname }}.
 #
-#   Group 4: Prometheus (collects + stores metrics), Grafana (shows them)
-#   Group 5 adds Elasticsearch, Logstash and Kibana to this same file.
+#   Metrics (Group 4): Prometheus (collects + stores), Grafana (shows)
+#   Logs    (Group 5): Elasticsearch x2 (stores), Logstash (receives + parses), Kibana (shows)
 #
-# network_mode: host on every exposed service: the containers use the VM's own
-# ports, so UFW decides who may connect. Published ports (-p) would make
-# Docker write its own iptables rules and BYPASS UFW (Project 3 lesson).
+# network_mode: host on every service the network may reach (Prometheus,
+# Grafana, Logstash, Kibana): the containers use the VM's own ports, so UFW
+# decides who may connect. Published ports (-p) would make Docker write its
+# own iptables rules and BYPASS UFW (Project 3 lesson).
+#
+# Config FOLDERS are mounted, not single files: Ansible replaces a file by
+# writing a new one, and a single-file mount would keep showing the OLD file
+# to the container, so a reload would read stale config.
 #
 # Data lives in named Docker volumes: it survives container upgrades and
 # restarts, and Docker sets the right file owner automatically.
@@ -14,6 +19,7 @@
 name: monitoring
 
 services:
+  # --- Metrics ------------------------------------------------------------------------
   prometheus:
     image: {{ monitoring_prometheus_image }}
     container_name: prometheus
@@ -29,7 +35,7 @@ services:
       # Allows "reload config" via HTTP (POST /-/reload) - no restart, no data gap.
       - --web.enable-lifecycle
     volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus:/etc/prometheus:ro
       - prometheus-data:/prometheus
 
   grafana:
@@ -55,6 +61,89 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana-data:/var/lib/grafana
 
+  # --- Logs ---------------------------------------------------------------------------
+  # Two-node Elasticsearch cluster on a private Docker network ("elastic").
+  #   es01 = master + data: manages the cluster and stores data
+  #   es02 = data only:     stores the replica copy of every index
+  # Every index has 1 replica, kept on the OTHER node. Stop es02 and the
+  # replicas are missing -> cluster turns YELLOW (data still complete on es01).
+  # es02 is deliberately NOT master-eligible: with 2 master-eligible nodes,
+  # losing one would leave no majority and the whole cluster would stop.
+  es01:
+    image: {{ monitoring_elasticsearch_image }}
+    container_name: es01
+    restart: unless-stopped
+    environment:
+      node.name: es01
+      node.roles: master,data,ingest
+      cluster.name: sherlock-logs
+      cluster.initial_master_nodes: es01  # who may form the cluster on first start
+      discovery.seed_hosts: es01,es02
+      # Security (passwords + TLS) is off: Elasticsearch is reachable ONLY on
+      # this VM's loopback and the private Docker network, never from outside.
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms{{ monitoring_es_heap }} -Xmx{{ monitoring_es_heap }}"
+    mem_limit: {{ monitoring_es_mem_limit }}
+    networks: [elastic]
+    ports:
+      - "127.0.0.1:{{ monitoring_es01_port }}:9200"  # loopback only: invisible to the network
+    volumes:
+      - es01-data:/usr/share/elasticsearch/data
+
+  es02:
+    image: {{ monitoring_elasticsearch_image }}
+    container_name: es02
+    restart: unless-stopped
+    environment:
+      node.name: es02
+      node.roles: data,ingest
+      cluster.name: sherlock-logs
+      discovery.seed_hosts: es01,es02
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms{{ monitoring_es_heap }} -Xmx{{ monitoring_es_heap }}"
+    mem_limit: {{ monitoring_es_mem_limit }}
+    networks: [elastic]
+    ports:
+      - "127.0.0.1:{{ monitoring_es02_port }}:9200"
+    volumes:
+      - es02-data:/usr/share/elasticsearch/data
+
+  logstash:
+    image: {{ monitoring_logstash_image }}
+    container_name: logstash
+    restart: unless-stopped
+    network_mode: host  # Filebeat connects to port {{ monitoring_logstash_beats_port }} on this VM
+    depends_on:
+      - es01
+    environment:
+      LS_JAVA_OPTS: "-Xms{{ monitoring_logstash_heap }} -Xmx{{ monitoring_logstash_heap }}"
+      CONFIG_RELOAD_AUTOMATIC: "true"  # pipeline changes apply without a restart
+      XPACK_MONITORING_ENABLED: "false"
+    mem_limit: {{ monitoring_logstash_mem_limit }}
+    volumes:
+      - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
+
+  kibana:
+    image: {{ monitoring_kibana_image }}
+    container_name: kibana
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      - es01
+    environment:
+      SERVER_HOST: "0.0.0.0"
+      SERVER_PORT: "{{ monitoring_kibana_port }}"
+      SERVER_NAME: kibana
+      # Both nodes listed: Kibana keeps working when one of them is down.
+      ELASTICSEARCH_HOSTS: '["http://localhost:{{ monitoring_es01_port }}","http://localhost:{{ monitoring_es02_port }}"]'
+      TELEMETRY_OPTIN: "false"
+    mem_limit: {{ monitoring_kibana_mem_limit }}
+
+networks:
+  elastic: {}
+
 volumes:
   prometheus-data:
   grafana-data:
+  es01-data:
+  es02-data:

@@ -11,6 +11,7 @@
 #   Group 4: jenkins (configured as code with JCasC)
 #   Project 4 - Group 3: monitoring agents - Node Exporter (every VM), cAdvisor (Docker VMs)
 #   Project 4 - Group 4: monitoring stack - Prometheus + Grafana on monitoring-server
+#   Project 4 - Group 5: logging - Elasticsearch x2, Logstash, Kibana + Filebeat on every VM
 #   Group 9: bonus - fail2ban, backup server (only with -e enable_bonus=true)
 
 # Runs FIRST, before Ansible opens any SSH connection to the other VMs.

@@ -1,0 +1,12 @@
+# Default values for the filebeat role.
+
+# Must match the Elasticsearch/Logstash version (monitoring role):
+# Elastic only supports matching versions across the stack.
+filebeat_version: "8.19.2"
+
+# Where to send the logs: Logstash on the monitoring VM.
+filebeat_logstash_host: "{{ monitoring_ip }}"
+filebeat_logstash_port: 5044
+
+filebeat_apt_key_url: https://artifacts.elastic.co/GPG-KEY-elasticsearch
+filebeat_apt_repo: https://artifacts.elastic.co/packages/8.x/apt

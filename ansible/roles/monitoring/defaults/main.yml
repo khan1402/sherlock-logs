@@ -25,3 +25,31 @@ monitoring_retention_size: 5GB
 monitoring_grafana_admin_user: admin
 # Real value lives in the encrypted vault.yml.
 monitoring_grafana_admin_password: "{{ vault_grafana_admin_password }}"
+# One version for Elasticsearch, Logstash, Kibana AND Filebeat: Elastic only
+# supports matching versions. 8.19 = the last 8.x line, supported long-term.
+monitoring_elastic_version: "8.19.2"
+monitoring_elasticsearch_image: "docker.elastic.co/elasticsearch/elasticsearch:{{ monitoring_elastic_version }}"
+monitoring_logstash_image: "docker.elastic.co/logstash/logstash:{{ monitoring_elastic_version }}"
+monitoring_kibana_image: "docker.elastic.co/kibana/kibana:{{ monitoring_elastic_version }}"
+
+monitoring_kibana_port: 5601
+monitoring_logstash_beats_port: 5044  # Filebeat -> Logstash (firewall rule: project VMs only)
+
+# Elasticsearch is NOT reachable from the network: each node is published on
+# the VM's loopback only (127.0.0.1), for Logstash, Kibana and the exporter.
+monitoring_es01_port: 9200
+monitoring_es02_port: 9201
+
+# Java heap per service. Elasticsearch: heap = half of the container limit
+# (the other half is used by the OS file cache, which makes searches fast).
+monitoring_es_heap: 1g
+monitoring_es_mem_limit: 2g
+monitoring_logstash_heap: 512m
+monitoring_logstash_mem_limit: 1g
+monitoring_kibana_mem_limit: 1g
+
+# Log retention: an ILM policy deletes log indices older than this.
+monitoring_logs_retention_days: 14
+
+# App containers whose stdout is JSON from logging_setup.py -> 'app' index.
+monitoring_app_containers: [backend, frontend]

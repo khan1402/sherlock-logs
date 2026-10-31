@@ -1,0 +1,78 @@
+# {{ ansible_managed }}
+# Filebeat on {{ inventory_hostname }}: read log files, ship them to Logstash.
+#
+# Every input sets log_type - Logstash uses it to choose how to parse the
+# event and which index it goes to (see logstash.conf on the monitoring VM).
+
+# Shown as agent.name in Kibana: the VM name from the inventory.
+name: {{ inventory_hostname }}
+
+filebeat.inputs:
+  # System logs: services, cron, kernel messages (kern.log = the dmesg output).
+  - type: filestream
+    id: system-logs
+    paths:
+      - /var/log/syslog
+      - /var/log/kern.log
+    fields:
+      log_type: system
+    fields_under_root: true
+
+  # Security log: SSH logins, sudo use, failed passwords.
+  - type: filestream
+    id: auth-logs
+    paths:
+      - /var/log/auth.log
+    fields:
+      log_type: auth
+    fields_under_root: true
+{% if inventory_hostname in groups['docker_hosts'] %}
+
+  # Container logs: stdout + stderr of every container. Docker writes them as
+  # JSON lines; the "container" parser unwraps them back to the original text
+  # and adds "stream: stdout|stderr". add_docker_metadata adds the container
+  # name and image, so Kibana can filter per container.
+  - type: filestream
+    id: docker-logs
+    paths:
+      - /var/lib/docker/containers/*/*-json.log
+    parsers:
+      - container:
+          stream: all
+          format: docker
+    processors:
+      - add_docker_metadata: ~
+    fields:
+      log_type: docker
+    fields_under_root: true
+{% endif %}
+{% if inventory_hostname in groups['loadbalancers'] %}
+
+  # nginx on the load balancer: every user request (access) and problems (error).
+  - type: filestream
+    id: nginx-access
+    paths:
+      - /var/log/nginx/access.log
+    fields:
+      log_type: nginx_access
+    fields_under_root: true
+
+  - type: filestream
+    id: nginx-error
+    paths:
+      - /var/log/nginx/error.log
+    fields:
+      log_type: nginx_error
+    fields_under_root: true
+{% endif %}
+
+# Modules (ready-made parsers) are not used: Logstash does all parsing in one place.
+filebeat.config.modules:
+  enabled: false
+
+output.logstash:
+  hosts: ["{{ filebeat_logstash_host }}:{{ filebeat_logstash_port }}"]
+
+# Filebeat's own log: /var/log/filebeat/ on this VM.
+logging.level: info
+logging.to_files: true

@@ -1,0 +1,57 @@
+# roles/filebeat - ship this VM's logs to Logstash on the monitoring VM.
+#
+# Runs as a normal service on the host (not in Docker): it must read the
+# host's own log files AND every container's log files.
+#
+# If Logstash is down or not built yet, Filebeat keeps retrying and remembers
+# how far it has read each file (its "registry"), so no log lines are lost.
+
+- name: Create the apt keyrings folder
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download Elastic's signing key (proves packages really come from Elastic)
+  ansible.builtin.get_url:
+    url: "{{ filebeat_apt_key_url }}"
+    dest: /etc/apt/keyrings/elastic.asc
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Add Elastic's apt repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/elastic.asc] {{ filebeat_apt_repo }} stable main"
+    filename: elastic
+    # umask 0027 would make it root-only; 0644 lets any user run apt read-only.
+    mode: "0644"
+    state: present
+
+# Exact version pinned. Automatic security updates (unattended-upgrades) only
+# use Ubuntu's own repositories, so they never upgrade Filebeat behind our back.
+- name: Install Filebeat {{ filebeat_version }}
+  ansible.builtin.apt:
+    name: "filebeat={{ filebeat_version }}"
+    state: present
+    lock_timeout: 600
+
+# Filebeat refuses a config file that others can write to (security check),
+# so: owned by root, mode 0600. validate = Filebeat's own syntax check.
+- name: Filebeat config - which logs to read, where to send them
+  ansible.builtin.template:
+    src: filebeat.yml.j2
+    dest: /etc/filebeat/filebeat.yml
+    owner: root
+    group: root
+    mode: "0600"
+    validate: /usr/bin/filebeat test config -c %s
+  notify: Restart filebeat
+
+- name: Start Filebeat now and on every boot
+  ansible.builtin.systemd:
+    name: filebeat
+    state: started
+    enabled: true

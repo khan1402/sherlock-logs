@@ -1,4 +1,6 @@
-# monitoring-agents.yml - the metric agents Prometheus pulls from (Project 4).
+# monitoring-agents.yml - the agents on every VM (Project 4):
+#   Node Exporter + cAdvisor: metrics that Prometheus pulls
+#   Filebeat:                 logs it pushes to Logstash
 #
 #   Called by site.yml (full setup) and by Jenkins on every pipeline run:
 #     ansible-playbook monitoring-agents.yml
@@ -16,3 +18,8 @@
   hosts: docker_hosts
   roles:
     - cadvisor
+
+- name: Logs - Filebeat on every VM
+  hosts: "core{{ ':backups' if enable_bonus | default(false) | bool else '' }}"
+  roles:
+    - filebeat

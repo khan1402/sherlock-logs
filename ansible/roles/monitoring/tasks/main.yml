@@ -1,15 +1,26 @@
 # roles/monitoring - the monitoring stack on monitoring-server, run with Docker Compose.
 #
-#   Group 4: Prometheus + Grafana
-#   Group 5: + Elasticsearch, Logstash, Kibana
+#   Group 4: Prometheus + Grafana (metrics)
+#   Group 5: Elasticsearch x2 + Logstash + Kibana (logs)
 #
-# Ansible renders the config files, Docker Compose starts the containers,
-# then Ansible waits until every service really answers.
+# Order: configs -> Elasticsearch first -> index settings -> everything else
+# -> wait until every service really answers.
+
+# --- Host setting for Elasticsearch -------------------------------------------------
+# Elasticsearch maps many index files into memory and refuses to start when
+# the kernel allows fewer than 262144 memory areas (Linux default: 65530).
+- name: Allow Elasticsearch enough memory map areas
+  ansible.posix.sysctl:
+    name: vm.max_map_count
+    value: "262144"
+    sysctl_file: /etc/sysctl.d/90-elasticsearch.conf
+    state: present
+    reload: true
 
 # --- Folders ----------------------------------------------------------------------
 # Mode set explicitly on EVERY folder: with the hardened umask 027, folders
 # would be 0750 and the containers' own users (Prometheus = nobody,
-# Grafana = 472) could not read their config files (Project 1 lesson).
+# Grafana = 472, Logstash = 1000) could not read their config (Project 1 lesson).
 - name: Create the monitoring folders
   ansible.builtin.file:
     path: "{{ monitoring_dir }}/{{ item }}"
@@ -23,11 +34,13 @@
     - grafana
     - grafana/provisioning
     - grafana/provisioning/datasources
+    - logstash
+    - logstash/pipeline
 
 # --- Config files -------------------------------------------------------------------
-# validate: Prometheus' own checker (promtool) tests the new file BEFORE it
-# replaces the old one. A typo fails the Ansible run instead of breaking a
-# running Prometheus. (--user root: the temp file Ansible checks is root-only.)
+# validate: each tool's own checker tests the new file BEFORE it replaces the
+# old one. A typo fails the Ansible run instead of breaking a running service.
+# (--user root: the temp file Ansible checks is readable by root only.)
 - name: Prometheus config - scrape targets from the inventory
   ansible.builtin.template:
     src: prometheus.yml.j2
@@ -50,6 +63,20 @@
     mode: "0644"
   notify: Restart grafana
 
+# Logstash checks the pipeline syntax and exits (~30-60 s, only when the file changed).
+# No handler needed afterwards: Logstash reloads the pipeline automatically.
+- name: Logstash pipeline - parse and route logs
+  ansible.builtin.template:
+    src: logstash/logstash.conf.j2
+    dest: "{{ monitoring_dir }}/logstash/pipeline/logstash.conf"
+    owner: root
+    group: root
+    mode: "0644"
+    validate: >-
+      docker run --rm --user root -e LS_JAVA_OPTS=-Xmx256m -e XPACK_MONITORING_ENABLED=false
+      -v %s:/tmp/logstash.conf:ro {{ monitoring_logstash_image }}
+      logstash --config.test_and_exit -f /tmp/logstash.conf
+
 # 0600: this file contains the Grafana admin password. Only root (and Docker,
 # which runs as root) needs to read it.
 - name: Docker Compose file for the stack
@@ -60,7 +87,64 @@
     group: root
     mode: "0600"
 
-# --- Start ----------------------------------------------------------------------------
+# --- Elasticsearch first -------------------------------------------------------------
+# The index template below must exist BEFORE Logstash creates the first
+# index, otherwise that index would miss the replica and retention settings.
+- name: Start the Elasticsearch cluster
+  community.docker.docker_compose_v2:
+    project_src: "{{ monitoring_dir }}"
+    services: [es01, es02]
+    state: present
+    pull: missing
+
+# green = every index has its primary AND its replica copy -> both nodes work.
+- name: Wait until the Elasticsearch cluster is green with 2 nodes
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_es01_port }}/_cluster/health?wait_for_status=green&timeout=10s"
+    status_code: [200, 408]  # 408 = not green yet
+  register: monitoring_es_health
+  until: >-
+    monitoring_es_health.status == 200
+    and monitoring_es_health.json.status == 'green'
+    and monitoring_es_health.json.number_of_nodes == 2
+  retries: 30
+  delay: 5
+
+# --- Index settings: replicas + retention ------------------------------------------------
+# PUT replaces the whole object, so running this again is harmless.
+# Elasticsearch answers 200 every time, so the tasks are reported as "ok".
+- name: Log retention policy - days until old indices are deleted - {{ monitoring_logs_retention_days }}
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_es01_port }}/_ilm/policy/sherlock-logs-retention"
+    method: PUT
+    body_format: json
+    body:
+      policy:
+        phases:
+          hot:
+            actions: {}
+          delete:
+            min_age: "{{ monitoring_logs_retention_days }}d"
+            actions:
+              delete: {}
+  changed_when: false
+
+- name: Index template - 1 shard, 1 replica, retention policy
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_es01_port }}/_index_template/sherlock-logs"
+    method: PUT
+    body_format: json
+    body:
+      index_patterns: [system-logs-*, app-logs-*, docker-logs-*, other-logs-*]
+      priority: 200
+      template:
+        settings:
+          number_of_shards: 1
+          number_of_replicas: 1  # the copy on the other node (needed for the yellow test)
+          index.lifecycle.name: sherlock-logs-retention
+  changed_when: false
+
+# --- Everything else -----------------------------------------------------------------------
 # Like 'docker compose up -d': creates missing containers and re-creates only
 # the ones whose settings changed. Running it again changes nothing.
 - name: Start the monitoring stack
@@ -73,7 +157,7 @@
 - name: Apply pending reloads and restarts
   ansible.builtin.meta: flush_handlers
 
-# --- Health checks --------------------------------------------------------------------
+# --- Health checks --------------------------------------------------------------------------
 - name: Wait until Prometheus is ready
   ansible.builtin.uri:
     url: "http://127.0.0.1:{{ monitoring_prometheus_port }}/-/ready"
@@ -91,3 +175,19 @@
   until: monitoring_grafana_ready.status == 200
   retries: 30
   delay: 2
+
+- name: Wait until Logstash accepts logs from Filebeat
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ monitoring_logstash_beats_port }}"
+    timeout: 180
+
+# Kibana is the slowest to start (1-3 minutes on a small VM).
+- name: Wait until Kibana is ready
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_kibana_port }}/api/status"
+    status_code: 200
+  register: monitoring_kibana_ready
+  until: monitoring_kibana_ready.status == 200
+  retries: 60
+  delay: 5

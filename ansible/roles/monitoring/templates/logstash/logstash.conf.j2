@@ -1,0 +1,99 @@
+# {{ ansible_managed }}
+# Logstash pipeline: Filebeat (every VM) -> parse -> Elasticsearch.
+#
+# Filebeat labels every event with log_type (system, auth, docker,
+# nginx_access, nginx_error). Based on it, events are parsed and sent to
+# one of three index families (one index per day):
+#
+#   system-logs-*  syslog, kernel log, auth.log from every VM
+#   app-logs-*     the app's JSON logs (backend, frontend) + nginx on the load balancer
+#   docker-logs-*  stdout/stderr of all other containers
+#
+# Parsing errors never drop an event: it is stored anyway, with a tag such as
+# "_syslog_parse_failure", so it can be found in Kibana and the pattern fixed.
+
+input {
+  beats {
+    port => {{ monitoring_logstash_beats_port }}
+  }
+}
+
+filter {
+  # Default target; replaced below for every known log type.
+  mutate { add_field => { "[@metadata][index]" => "other" } }
+
+  # --- System logs: syslog, kern.log, auth.log --------------------------------------
+  if [log_type] in ["system", "auth"] {
+    mutate { replace => { "[@metadata][index]" => "system" } }
+
+    # "Oct 31 22:10:01 web-server-1 sshd[812]: Accepted publickey for devops ..."
+    # Two timestamp styles: classic syslog (Ubuntu 22.04) and ISO 8601 (newer Ubuntu).
+    grok {
+      match => {
+        "message" => [
+          "^%{SYSLOGTIMESTAMP:[system][timestamp]} %{SYSLOGHOST:[system][hostname]} %{DATA:[system][program]}(?:\[%{POSINT:[system][pid]:int}\])?: %{GREEDYDATA:[system][message]}$",
+          "^%{TIMESTAMP_ISO8601:[system][timestamp]} %{SYSLOGHOST:[system][hostname]} %{DATA:[system][program]}(?:\[%{POSINT:[system][pid]:int}\])?: %{GREEDYDATA:[system][message]}$"
+        ]
+      }
+      tag_on_failure => ["_syslog_parse_failure"]
+    }
+
+    # Use the time written IN the log line as the event time.
+    if [system][timestamp] {
+      date {
+        match => ["[system][timestamp]", "MMM  d HH:mm:ss", "MMM dd HH:mm:ss", "ISO8601"]
+        timezone => "{{ timezone }}"
+        remove_field => ["[system][timestamp]"]
+        tag_on_failure => ["_syslog_date_failure"]
+      }
+    }
+  }
+
+  # --- Container logs ----------------------------------------------------------------
+  else if [log_type] == "docker" {
+    if [container][name] in [{{ monitoring_app_containers | map('to_json') | join(', ') }}] {
+      # Our app: every stdout line is one JSON object (logging_setup.py).
+      mutate { replace => { "[@metadata][index]" => "app" } }
+      if [message] =~ /^\{/ {
+        json {
+          source => "message"
+          target => "app"  # app fields go under app.* (no clash with Filebeat's host.*, etc.)
+          tag_on_failure => ["_app_json_failure"]
+        }
+      }
+      # Standard field name for the level, so one Kibana filter works everywhere.
+      if [app][level] {
+        mutate { copy => { "[app][level]" => "[log][level]" } }
+      }
+    } else {
+      mutate { replace => { "[@metadata][index]" => "docker" } }
+    }
+  }
+
+  # --- nginx on the load balancer: the app's access and error logs -------------------
+  else if [log_type] in ["nginx_access", "nginx_error"] {
+    mutate {
+      replace => { "[@metadata][index]" => "app" }
+      add_field => { "[app][service]" => "nginx" }
+    }
+    if [log_type] == "nginx_access" {
+      # Standard "combined" format: client IP, method, URL, status, size, user agent.
+      grok {
+        match => { "message" => "%{COMBINEDAPACHELOG}" }
+        tag_on_failure => ["_nginx_parse_failure"]
+      }
+    }
+  }
+}
+
+output {
+  elasticsearch {
+    # Both nodes: Logstash keeps writing when one of them is down.
+    hosts => ["http://localhost:{{ monitoring_es01_port }}", "http://localhost:{{ monitoring_es02_port }}"]
+    index => "%{[@metadata][index]}-logs-%{+YYYY.MM.dd}"
+    # Index settings (replicas, retention) come from our own index template,
+    # created by Ansible - not from Logstash's built-in one.
+    manage_template => false
+    data_stream => false
+  }
+}

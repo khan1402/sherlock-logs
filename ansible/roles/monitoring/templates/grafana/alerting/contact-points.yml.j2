@@ -1,0 +1,29 @@
+# {{ ansible_managed }}
+# Where Grafana sends alerts (contact point) and how often (notification policy).
+# This file contains the Slack webhook URL - a secret - so it is readable only
+# by root and the Grafana container's user (mode 0640).
+
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: slack
+    receivers:
+      - uid: slack-alerts
+        type: slack
+        settings:
+          url: {{ monitoring_slack_webhook_url | to_json }}
+        disableResolveMessage: false  # also post "Resolved" when the problem is gone
+
+# Against alert fatigue:
+#   group_by        one message per alert type and VM, not one per data point
+#   group_wait      wait a little so alerts that start together arrive together
+#   group_interval  new alerts joining an already-notified group
+#   repeat_interval remind about a still-firing alert, but not every minute
+policies:
+  - orgId: 1
+    receiver: slack
+    group_by: [alertname, instance]
+    group_wait: {{ monitoring_alert_group_wait }}
+    group_interval: {{ monitoring_alert_group_interval }}
+    repeat_interval: {{ monitoring_alert_repeat_interval }}

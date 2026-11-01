@@ -1,0 +1,64 @@
+# {{ ansible_managed }}
+# Grafana alert rules - generated from monitoring_alert_rules (role defaults).
+#
+# Every rule has two steps:
+#   A = the PromQL query (one result per VM / container / service)
+#   C = the threshold check on A (gt = greater than, lt = less than)
+# Each result is checked on its own, so one rule watches every VM at once and
+# says WHICH VM has the problem. "for" = how long the condition must stay true
+# before the alert fires - short spikes never notify anyone.
+
+{#- Placeholders from the role defaults -> Grafana's own message template syntax. -#}
+{%- macro grafana_text(text) -%}
+{{ text
+   | replace('%instance%', '{{ $labels.instance }}')
+   | replace('%name%', '{{ $labels.name }}')
+   | replace('%job%', '{{ $labels.job }}')
+   | replace('%value1%', '{{ printf "%.1f" $values.A.Value }}')
+   | replace('%value%', '{{ printf "%.0f" $values.A.Value }}')
+   | to_json }}
+{%- endmacro %}
+
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: sherlock-logs
+    folder: Sherlock Logs
+    interval: {{ monitoring_alert_eval_interval }}
+    rules:
+{% for rule in monitoring_alert_rules %}
+      - uid: {{ rule.uid }}
+        title: {{ rule.title | to_json }}
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: {{ rule.expr | to_json }}
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: {{ rule.op }}
+                    params: [{{ rule.threshold }}]
+        # No result at all (e.g. no container with a memory limit) = nothing wrong.
+        noDataState: OK
+        # The query itself failed (e.g. Prometheus down) = show it as an error.
+        execErrState: Error
+        for: {{ rule.for }}
+        labels:
+          severity: {{ rule.severity }}
+        annotations:
+          summary: {{ grafana_text(rule.summary) }}
+          description: {{ grafana_text(rule.description) }}
+{% endfor %}

@@ -53,3 +53,186 @@ monitoring_logs_retention_days: 14
 
 # App containers whose stdout is JSON from logging_setup.py -> 'app' index.
 monitoring_app_containers: [backend, frontend]
+
+# --- Alerts and notifications (Group 7) --------------------------------------------
+# Elasticsearch exporter: turns the cluster health (green/yellow/red) into
+# Prometheus metrics. Listens on the VM's loopback only.
+monitoring_es_exporter_image: quay.io/prometheuscommunity/elasticsearch-exporter:v1.9.0
+monitoring_es_exporter_port: 9114
+
+# Where alerts are sent. Default: the same Slack webhook Jenkins uses. To give
+# alerts their own channel, add vault_slack_alerts_webhook_url to the vault.
+monitoring_slack_webhook_url: "{{ vault_slack_alerts_webhook_url | default(vault_slack_webhook_url) }}"
+
+# Against alert fatigue: alerts for the same problem on the same VM are grouped
+# into ONE message, and a still-firing alert is repeated only every 4 hours.
+monitoring_alert_group_wait: 30s      # wait for related alerts before the first message
+monitoring_alert_group_interval: 5m   # new alerts joining an existing group
+monitoring_alert_repeat_interval: 4h  # reminder while still firing
+monitoring_alert_eval_interval: 30s   # how often Grafana checks every rule
+
+# Demo mode for the review: the 5-minute "sustained" windows shrink to 1 minute,
+# so CPU/memory alerts can be shown quickly. Normal operation: false.
+#   ansible-playbook site.yml -e monitoring_alert_demo_mode=true
+monitoring_alert_demo_mode: false
+monitoring_alert_for_sustained: "{{ '1m' if monitoring_alert_demo_mode | bool else '5m' }}"
+
+# Logstash log-pattern alerts: at most one Slack message per VM and alert type
+# in this many seconds (the rest are still stored, just not sent).
+monitoring_log_alert_throttle_seconds: 300
+
+# --- The alert rules ------------------------------------------------------------------
+# One entry per rule. Grafana runs the PromQL query (expr) every 30 s and fires
+# when the result crosses the threshold (op: gt = greater than, lt = less than)
+# for the "for" duration.
+#
+# Placeholders in summary/description, filled in by Grafana when it alerts:
+#   %instance% = VM name   %name% = container   %job% = service
+#   %value%    = the measured value (whole number), %value1% = one decimal
+monitoring_alert_rules:
+  # ===== Required: VMs =====
+  - uid: vm-cpu-high
+    title: High CPU usage
+    expr: 100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[2m])))
+    op: gt
+    threshold: 80
+    for: "{{ monitoring_alert_for_sustained }}"
+    severity: warning
+    summary: "CPU above 80% on %instance%"
+    description: "CPU usage is %value%% (threshold 80%, sustained)."
+
+  - uid: vm-disk-low
+    title: Low disk space
+    expr: 100 * node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"}
+    op: lt
+    threshold: 20
+    for: 1m
+    severity: critical
+    summary: "Less than 20% disk space left on %instance%"
+    description: "Only %value1%% of the root filesystem is free."
+
+  - uid: vm-memory-high
+    title: High memory usage
+    expr: 100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)
+    op: gt
+    threshold: 90
+    for: "{{ monitoring_alert_for_sustained }}"
+    severity: warning
+    summary: "Memory above 90% on %instance%"
+    description: "Memory usage is %value%% (threshold 90%, sustained)."
+
+  # ===== Required: Docker =====
+  # Every restart gives the container a new start time; changes() counts them.
+  - uid: container-restarts
+    title: Container restarting
+    expr: changes(container_start_time_seconds{name!=""}[15m])
+    op: gt
+    threshold: 3
+    for: 0s
+    severity: warning
+    summary: "Container %name% on %instance% keeps restarting"
+    description: "%value% restarts in the last 15 minutes (threshold 3)."
+
+  # Only containers WITH a memory limit (limit > 0) are checked.
+  - uid: container-memory-high
+    title: Container near its memory limit
+    expr: 100 * container_memory_working_set_bytes{name!=""} / (container_spec_memory_limit_bytes{name!=""} > 0)
+    op: gt
+    threshold: 80
+    for: 1m
+    severity: warning
+    summary: "Container %name% on %instance% uses over 80% of its memory limit"
+    description: "Memory use is %value%% of the limit. At 100% the kernel kills it."
+
+  # ===== Required: infrastructure =====
+  # up = 1 when Prometheus could scrape the VM's Node Exporter, 0 when not.
+  - uid: vm-unreachable
+    title: VM unreachable
+    expr: up{job="node"}
+    op: lt
+    threshold: 1
+    for: 1m
+    severity: critical
+    summary: "%instance% is unreachable"
+    description: "Prometheus could not reach %instance% for 1 minute (VM down, network, or firewall)."
+
+  # The exporter reports 1 for the cluster's current colour. green < 1 = yellow or red.
+  - uid: es-not-green
+    title: Elasticsearch cluster yellow or red
+    expr: elasticsearch_cluster_health_status{color="green"}
+    op: lt
+    threshold: 1
+    for: 1m
+    severity: critical
+    summary: Elasticsearch cluster is not green
+    description: Yellow = replica copies missing (a node is down, data still complete). Red = some data unavailable.
+
+  - uid: es-unreachable
+    title: Elasticsearch unreachable
+    expr: elasticsearch_cluster_health_up
+    op: lt
+    threshold: 1
+    for: 1m
+    severity: critical
+    summary: Elasticsearch does not answer
+    description: The exporter cannot read the cluster health - es01 (the master node) is probably down.
+
+  # ===== Extra: advanced rules (trends and combinations) =====
+  # Trend: where will free disk space be in 4 hours, at the speed of the last hour?
+  - uid: vm-disk-filling
+    title: Disk will be full within 4 hours
+    expr: predict_linear(node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"}[1h], 4 * 3600)
+    op: lt
+    threshold: 0
+    for: 5m
+    severity: warning
+    summary: "Disk on %instance% will be full within 4 hours"
+    description: At the current fill rate, free space on / reaches zero in under 4 hours.
+
+  # Trend: CPU has climbed steadily (more than 40 percentage points in 30 minutes).
+  - uid: vm-cpu-rising
+    title: CPU usage rising steadily
+    expr: deriv((100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[2m]))))[30m:1m]) * 1800
+    op: gt
+    threshold: 40
+    for: 5m
+    severity: info
+    summary: "CPU on %instance% keeps climbing"
+    description: "CPU rose about %value% percentage points over the last 30 minutes."
+
+  # Combination: busy CPU AND almost no free memory at the same time = the VM
+  # is close to swapping or killing processes. Returns a value only when BOTH are true.
+  - uid: vm-cpu-and-memory
+    title: High CPU and low memory together
+    expr: >-
+      (100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[2m]))) > 80)
+      and on (instance)
+      (100 * node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 10)
+    op: gt
+    threshold: 0
+    for: 2m
+    severity: critical
+    summary: "%instance%: high CPU and low memory at the same time"
+    description: CPU above 80% while less than 10% memory is free.
+
+  - uid: app-error-rate
+    title: Application error rate high
+    expr: >-
+      100 * sum by (job) (rate(http_requests_total{job=~"backend|frontend",status="5xx"}[5m]))
+      / sum by (job) (rate(http_requests_total{job=~"backend|frontend"}[5m]))
+    op: gt
+    threshold: 5
+    for: 2m
+    severity: critical
+    summary: "More than 5% of %job% requests fail"
+    description: "%value1%% of requests returned a 5xx server error."
+
+  - uid: app-down
+    title: Application instance down
+    expr: up{job=~"backend|frontend"}
+    op: lt
+    threshold: 1
+    for: 1m
+    severity: critical
+    summary: "%job% on %instance% is down"
+    description: Prometheus cannot scrape the app's /metrics endpoint.

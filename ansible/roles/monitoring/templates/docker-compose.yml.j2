@@ -3,6 +3,7 @@
 #
 #   Metrics (Group 4): Prometheus (collects + stores), Grafana (shows)
 #   Logs    (Group 5): Elasticsearch x2 (stores), Logstash (receives + parses), Kibana (shows)
+#   Alerts  (Group 7): Elasticsearch exporter (cluster health for Prometheus/Grafana)
 #
 # network_mode: host on every service the network may reach (Prometheus,
 # Grafana, Logstash, Kibana): the containers use the VM's own ports, so UFW
@@ -59,7 +60,7 @@ services:
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./grafana/dashboards:/etc/grafana/dashboards:ro  # dashboard JSON files 
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro  # dashboard JSON files
       - grafana-data:/var/lib/grafana
 
   # --- Logs ---------------------------------------------------------------------------
@@ -120,6 +121,9 @@ services:
       LS_JAVA_OPTS: "-Xms{{ monitoring_logstash_heap }} -Xmx{{ monitoring_logstash_heap }}"
       CONFIG_RELOAD_AUTOMATIC: "true"  # pipeline changes apply without a restart
       XPACK_MONITORING_ENABLED: "false"
+      # Log-pattern alerts are posted to this Slack webhook. Kept out of the
+      # pipeline file: the pipeline reads it from this environment variable.
+      SLACK_WEBHOOK_URL: {{ monitoring_slack_webhook_url | replace('$', '$$') | to_json }}
     mem_limit: {{ monitoring_logstash_mem_limit }}
     volumes:
       - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
@@ -139,6 +143,19 @@ services:
       ELASTICSEARCH_HOSTS: '["http://localhost:{{ monitoring_es01_port }}","http://localhost:{{ monitoring_es02_port }}"]'
       TELEMETRY_OPTIN: "false"
     mem_limit: {{ monitoring_kibana_mem_limit }}
+    
+  # Reads the cluster health from es01 and offers it as Prometheus metrics
+  # (elasticsearch_cluster_health_status{color="green|yellow|red"}).
+  elasticsearch-exporter:
+    image: {{ monitoring_es_exporter_image }}
+    container_name: elasticsearch-exporter
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      - es01
+    command:
+      - --es.uri=http://localhost:{{ monitoring_es01_port }}
+      - --web.listen-address=127.0.0.1:{{ monitoring_es_exporter_port }}  # loopback only
 
 networks:
   elastic: {}

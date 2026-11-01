@@ -9,6 +9,10 @@
 #   app-logs-*     the app's JSON logs (backend, frontend) + nginx on the load balancer
 #   docker-logs-*  stdout/stderr of all other containers
 #
+# Log-pattern alerts (Group 7): lines matching an alert pattern get the tag
+# "log_alert" and are ALSO posted to Slack - at most one message per VM and
+# alert type every {{ monitoring_log_alert_throttle_seconds }} s. They are always stored in Elasticsearch.
+#
 # Parsing errors never drop an event: it is stored anyway, with a tag such as
 # "_syslog_parse_failure", so it can be found in Kibana and the pattern fixed.
 
@@ -84,6 +88,35 @@ filter {
       }
     }
   }
+
+  # --- Log-pattern alerts (Group 7) ------------------------------------------------
+  # Someone tried a wrong password or a user that does not exist.
+  if [log_type] == "auth" and [system][message] =~ /(Failed password|Invalid user)/ {
+    mutate {
+      add_tag => ["log_alert"]
+      add_field => { "[@metadata][alert]" => "Failed SSH login" }
+    }
+  }
+  # The app logged an error (e.g. the frontend could not reach the backend), or nginx did.
+  else if [log][level] in ["ERROR", "CRITICAL"] or [log_type] == "nginx_error" {
+    mutate {
+      add_tag => ["log_alert"]
+      add_field => { "[@metadata][alert]" => "Application error" }
+    }
+  }
+
+  # Throttling: the FIRST matching line per VM + alert type in each period is
+  # sent; the rest get "alert_throttled" and are only stored. 10 failed logins
+  # in a row = 1 Slack message, not 10.
+  if "log_alert" in [tags] {
+    throttle {
+      key => "%{[agent][name]}-%{[@metadata][alert]}"
+      after_count => 1
+      period => {{ monitoring_log_alert_throttle_seconds }}
+      max_age => {{ monitoring_log_alert_throttle_seconds * 2 }}
+      add_tag => ["alert_throttled"]
+    }
+  }
 }
 
 output {
@@ -95,5 +128,18 @@ output {
     # created by Ansible - not from Logstash's built-in one.
     manage_template => false
     data_stream => false
+  }
+
+  # Log-pattern alerts -> Slack. The webhook URL comes from the container's
+  # environment (SLACK_WEBHOOK_URL), so the secret is not written in this file.
+  if "log_alert" in [tags] and "alert_throttled" not in [tags] {
+    http {
+      url => "${SLACK_WEBHOOK_URL}"
+      http_method => "post"
+      format => "json"
+      mapping => {
+        "text" => ":rotating_light: *%{[@metadata][alert]}* on `%{[agent][name]}` - %{message}"
+      }
+    }
   }
 }

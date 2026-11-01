@@ -3,6 +3,7 @@
 #   Group 4: Prometheus + Grafana (metrics)
 #   Group 5: Elasticsearch x2 + Logstash + Kibana (logs)
 #   Group 6: dashboards - Grafana (JSON files) and Kibana (imported via its API)
+#   Group 7: alerts - Grafana alert rules + Slack, Elasticsearch exporter, Logstash log alerts
 #
 # Order: configs -> Elasticsearch first -> index settings -> everything else
 # -> wait until every service really answers.
@@ -36,6 +37,7 @@
     - grafana/provisioning
     - grafana/provisioning/datasources
     - grafana/provisioning/dashboards
+    - grafana/provisioning/alerting
     - grafana/dashboards
     - logstash
     - logstash/pipeline
@@ -86,6 +88,26 @@
     mode: "0644"
     directory_mode: "0755"
 
+- name: Grafana alert rules - thresholds from monitoring_alert_rules
+  ansible.builtin.template:
+    src: grafana/alerting/alert-rules.yml.j2
+    dest: "{{ monitoring_dir }}/grafana/provisioning/alerting/alert-rules.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart grafana
+
+# Contains the Slack webhook (a secret): readable by root and by the Grafana
+# container's user only (uid/gid 472 inside the container).
+- name: Grafana contact point and notification policy - Slack
+  ansible.builtin.template:
+    src: grafana/alerting/contact-points.yml.j2
+    dest: "{{ monitoring_dir }}/grafana/provisioning/alerting/contact-points.yml"
+    owner: root
+    group: "472"
+    mode: "0640"
+  notify: Restart grafana
+
 # Logstash checks the pipeline syntax and exits (~30-60 s, only when the file changed).
 # No handler needed afterwards: Logstash reloads the pipeline automatically.
 - name: Logstash pipeline - parse and route logs
@@ -97,6 +119,7 @@
     mode: "0644"
     validate: >-
       docker run --rm --user root -e LS_JAVA_OPTS=-Xmx256m -e XPACK_MONITORING_ENABLED=false
+      -e SLACK_WEBHOOK_URL=https://hooks.slack.invalid/syntax-check-only
       -v %s:/tmp/logstash.conf:ro {{ monitoring_logstash_image }}
       logstash --config.test_and_exit -f /tmp/logstash.conf
 

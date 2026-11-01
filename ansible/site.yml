@@ -48,10 +48,15 @@
 # measurable before the app and Jenkins are installed.
 - name: Monitoring agents
   ansible.builtin.import_playbook: monitoring-agents.yml
+
 # The monitoring stack comes up BEFORE the app and Jenkins, so it already
 # watches the first deploy.
+#
+# Tag "monitoring": re-apply ONLY this play (about a minute), e.g. for the
+# review's demo mode:  ansible-playbook site.yml --tags monitoring -e monitoring_alert_demo_mode=true
 - name: Monitoring stack
   hosts: monitoring
+  tags: [monitoring]
   roles:
     - monitoring
 

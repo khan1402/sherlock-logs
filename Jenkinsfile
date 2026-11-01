@@ -7,11 +7,15 @@
 //   3. Build        - build the backend and frontend images
 //   4. Image scan   - Trivy: stop if an image has a CRITICAL fixable vulnerability
 //   5. Push         - push to Docker Hub + save build-info.txt as the build artifact
-//   6. Deploy       - Ansible deploys the new tag: backend, then web servers one at a time
-//   7. Smoke test   - check through the load balancer that the new version is live
-//   8. Load test    - k6: 5 users for 20 s, fail on errors or slow pages
+//   6. Monitoring agents - Node Exporter, cAdvisor, Filebeat on every VM in the inventory
+//   7. Monitoring check  - all targets up, Elasticsearch green, logs arriving,
+//                          dashboards + alert rules loaded ("never deploy blind")
+//   8. Deploy       - Ansible deploys the new tag: backend, then web servers one at a time
+//   9. Smoke test   - check through the load balancer that the new version is live
+//  10. Load test    - k6: 5 users for 20 s, fail on errors or slow pages
 //
-// If anything fails AFTER the deploy started (6-8), the previous version is
+// A failure in 1-7 blocks the deploy: users keep the version they have.
+// If anything fails AFTER the deploy started (8-10), the previous version is
 // deployed again automatically. Every result is posted to Slack (#deployments).
 
 pipeline {
@@ -135,6 +139,22 @@ pipeline {
             }
         }
 
+        // Project 4: keep the monitoring agents on every VM up to date. A VM that is
+        // new in the inventory gets Node Exporter, cAdvisor and Filebeat here.
+        stage('Monitoring agents') {
+            steps {
+                runPlaybook('monitoring-agents.yml')
+            }
+        }
+
+        // Never deploy blind: if monitoring is broken, we could not see what the
+        // deploy does. Read-only check, see roles/monitoring/tasks/check.yml.
+        stage('Monitoring check') {
+            steps {
+                runPlaybook('monitoring-check.yml')
+            }
+        }
+
         stage('Deploy') {
             steps {
                 script {
@@ -208,16 +228,23 @@ pipeline {
 
 // Deploy one version with the same deploy.yml as the very first deploy.
 def deployVersion(String tag) {
+    runPlaybook('deploy.yml', "-e image_tag=${tag}")
+}
+
+// Run one playbook from the ansible/ folder with the SSH key and vault password
+// from Jenkins' credential store (never written into the workspace or the log).
+def runPlaybook(String playbook, String extraArgs = '') {
     withCredentials([
         sshUserPrivateKey(credentialsId: 'ansible-ssh-key', keyFileVariable: 'SSH_KEY'),
         file(credentialsId: 'ansible-vault-pass', variable: 'VAULT_PASS_FILE')
     ]) {
-        withEnv(["DEPLOY_TAG=${tag}"]) {
+        withEnv(["PLAYBOOK=${playbook}", "EXTRA_ARGS=${extraArgs}"]) {
             sh '''
                 export ANSIBLE_PRIVATE_KEY_FILE="$SSH_KEY"
                 export ANSIBLE_VAULT_PASSWORD_FILE="$VAULT_PASS_FILE"
                 cd ansible
-                ansible-playbook deploy.yml -e image_tag="$DEPLOY_TAG"
+                # EXTRA_ARGS unquoted on purpose: "-e image_tag=abc" must become 2 arguments.
+                ansible-playbook "$PLAYBOOK" $EXTRA_ARGS
             '''
         }
     }

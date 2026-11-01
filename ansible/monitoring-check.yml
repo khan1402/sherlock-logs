@@ -1,0 +1,17 @@
+# monitoring-check.yml - is the monitoring system healthy? (read-only)
+#
+#   ansible-playbook monitoring-check.yml
+#
+# Jenkins runs it before every deploy ("never deploy blind"). Fails if a scrape
+# target is down, Elasticsearch is not green, logs stopped arriving, or a
+# dashboard / alert rule is missing. The checks live in the monitoring role:
+# roles/monitoring/tasks/check.yml.
+
+- name: Monitoring health check
+  hosts: monitoring
+  gather_facts: false
+  tasks:
+    - name: Run the monitoring checks
+      ansible.builtin.include_role:
+        name: monitoring
+        tasks_from: check

@@ -1,0 +1,114 @@
+# roles/monitoring/tasks/check.yml - is the monitoring system healthy RIGHT NOW?
+#
+#   Used by monitoring-check.yml (Jenkins runs it before every deploy):
+#     ansible-playbook monitoring-check.yml
+#
+# Read-only: changes nothing. Runs ON monitoring-server, so every service is
+# reached on localhost (Elasticsearch is not reachable from anywhere else).
+# Each check fails with a message that says exactly what is wrong.
+
+# --- Metrics -----------------------------------------------------------------------
+- name: Read Prometheus' scrape targets
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_prometheus_port }}/api/v1/targets?state=active"
+    return_content: true
+  register: monitoring_check_targets
+
+- name: Every scrape target is up (all VMs, containers, app, Elasticsearch)
+  vars:
+    monitoring_check_all: "{{ monitoring_check_targets.json.data.activeTargets }}"
+    # scrapeUrl shows the VM's IP and the port, e.g. http://192.168.56.11:9100/metrics
+    monitoring_check_down: >-
+      {{ monitoring_check_all | rejectattr('health', 'equalto', 'up')
+         | map(attribute='scrapeUrl') | list }}
+  ansible.builtin.assert:
+    that: monitoring_check_down | length == 0
+    fail_msg: "Targets DOWN: {{ monitoring_check_down | join(', ') }}"
+    success_msg: "All {{ monitoring_check_all | length }} targets are up"
+    quiet: true
+
+# --- Logs --------------------------------------------------------------------------
+- name: Read the Elasticsearch cluster health
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_es01_port }}/_cluster/health"
+  register: monitoring_check_es
+
+- name: Elasticsearch cluster is green with 2 nodes
+  ansible.builtin.assert:
+    that:
+      - monitoring_check_es.json.status == 'green'
+      - monitoring_check_es.json.number_of_nodes == 2
+    fail_msg: >-
+      Cluster is {{ monitoring_check_es.json.status }} with
+      {{ monitoring_check_es.json.number_of_nodes }} node(s) (expected green, 2)
+    success_msg: Cluster green, 2 nodes
+    quiet: true
+
+# Proves the whole log path works: Filebeat -> Logstash -> Elasticsearch.
+- name: Count system log lines from the last 15 minutes
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_es01_port }}/system-logs-*/_count"
+    method: POST
+    body_format: json
+    body:
+      query:
+        range:
+          "@timestamp":
+            gte: now-15m
+  register: monitoring_check_logs
+
+- name: Logs are arriving
+  ansible.builtin.assert:
+    that: monitoring_check_logs.json.count > 0
+    fail_msg: No system logs in the last 15 minutes - check Filebeat on the VMs and Logstash
+    success_msg: "{{ monitoring_check_logs.json.count }} system log lines in the last 15 minutes"
+    quiet: true
+
+# --- Dashboards and alerts ------------------------------------------------------------
+# no_log: these requests carry the Grafana admin password.
+- name: List Grafana dashboards
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_grafana_port }}/api/search?type=dash-db"
+    url_username: "{{ monitoring_grafana_admin_user }}"
+    url_password: "{{ monitoring_grafana_admin_password }}"
+    force_basic_auth: true
+  register: monitoring_check_dashboards
+  no_log: true
+
+- name: List Grafana alert rules
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_grafana_port }}/api/v1/provisioning/alert-rules"
+    url_username: "{{ monitoring_grafana_admin_user }}"
+    url_password: "{{ monitoring_grafana_admin_password }}"
+    force_basic_auth: true
+  register: monitoring_check_rules
+  no_log: true
+
+- name: Grafana has the 3 dashboards and every alert rule
+  vars:
+    monitoring_check_uids: "{{ monitoring_check_dashboards.json | map(attribute='uid') | list }}"
+    monitoring_check_expected: [vm-performance, docker-containers, app-performance]
+  ansible.builtin.assert:
+    that:
+      - monitoring_check_expected | difference(monitoring_check_uids) | length == 0
+      - monitoring_check_rules.json | length == monitoring_alert_rules | length
+    fail_msg: >-
+      Missing dashboards: {{ monitoring_check_expected | difference(monitoring_check_uids) }},
+      alert rules loaded: {{ monitoring_check_rules.json | length }} of {{ monitoring_alert_rules | length }}
+    success_msg: "3 dashboards, {{ monitoring_check_rules.json | length }} alert rules"
+    quiet: true
+
+- name: List Kibana dashboards
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_kibana_port }}/api/saved_objects/_find?type=dashboard&per_page=100"
+  register: monitoring_check_kibana
+
+- name: Kibana has the 3 log dashboards
+  vars:
+    monitoring_check_ids: "{{ monitoring_check_kibana.json.saved_objects | map(attribute='id') | list }}"
+    monitoring_check_expected: [sherlock-system-logs, sherlock-app-logs, sherlock-docker-logs]
+  ansible.builtin.assert:
+    that: monitoring_check_expected | difference(monitoring_check_ids) | length == 0
+    fail_msg: "Missing Kibana dashboards: {{ monitoring_check_expected | difference(monitoring_check_ids) }}"
+    success_msg: 3 Kibana dashboards
+    quiet: true

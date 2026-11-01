@@ -54,7 +54,7 @@ jobs:
           # ansible.cfg points to ~/.vault_pass. Nothing is decrypted while
           # linting, so a dummy file is enough - the real password never leaves your laptop.
           echo "not-the-real-password" > ~/.vault_pass
-          ansible-lint site.yml deploy.yml monitoring-agents.yml
+          ansible-lint site.yml deploy.yml monitoring-agents.yml monitoring-check.yml
 
   shell:
     name: Shell scripts - shellcheck
@@ -62,4 +62,4 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: shellcheck
-        run: shellcheck scripts/*.sh ci/*.sh vagrant/*.sh ansible/roles/backup_source/files/backup-export
+        run: shellcheck scripts/*.sh scripts/demo/*.sh ci/*.sh vagrant/*.sh ansible/roles/backup_source/files/backup-export

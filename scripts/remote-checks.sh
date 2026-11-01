@@ -32,11 +32,14 @@ check "SSH: password login disabled"          grep -qix 'PasswordAuthentication 
 check "SSH: only devops may log in"           grep -qix 'AllowUsers devops' "$SSHD"
 
 # --- Firewall: active, and ONLY the ports this server needs ---------------------
+# 9100 = Node Exporter (every VM), 8081 = cAdvisor (Docker VMs) - monitoring VM only.
 case "$ROLE" in
-  lb|web) want="22 80" ;;
-  app)    want="22 3000" ;;
-  cicd)   want="22 8080" ;;
-  *)      want="22" ;;
+  lb)         want="22 80 9100" ;;
+  web)        want="22 80 8081 9100" ;;
+  app)        want="22 3000 8081 9100" ;;
+  cicd)       want="22 8080 8081 9100" ;;
+  monitoring) want="22 3000 5044 5601 9090 9100" ;;
+  *)          want="22 9100" ;;
 esac
 status="$(sudo -n ufw status 2>/dev/null)"
 open="$(awk '/ALLOW/ { split($1, port, "/"); print port[1] }' <<<"$status" | sort -un | xargs)"
@@ -62,6 +65,25 @@ case "$ROLE" in
   cicd)
     check "Docker is running"                 systemctl is-active --quiet docker
     check "Jenkins is running"                systemctl is-active --quiet jenkins ;;
+  monitoring)
+    check "Docker is running"                 systemctl is-active --quiet docker
+    check "vm.max_map_count is high enough for Elasticsearch" test "$(sysctl -n vm.max_map_count)" -ge 262144
+    check "Prometheus is ready"               curl -sf -m 5 http://127.0.0.1:9090/-/ready
+    check "Grafana is healthy"                curl -sf -m 5 http://127.0.0.1:3000/api/health
+    check "Kibana is available"               curl -sf -m 10 http://127.0.0.1:5601/api/status
+    check "Logstash listens for Filebeat on 5044" bash -c "ss -ltn | grep -q ':5044 '"
+    health="$(curl -s -m 5 http://127.0.0.1:9200/_cluster/health)"
+    check "Elasticsearch cluster is green"    grep -q '"status":"green"' <<<"$health"
+    check "Elasticsearch has 2 nodes"         grep -q '"number_of_nodes":2' <<<"$health" ;;
+esac
+
+# --- Monitoring agents (Project 4) ----------------------------------------------------
+check "Node Exporter is running"              systemctl is-active --quiet node_exporter
+check "Node Exporter answers on :9100"        curl -sf -m 5 -o /dev/null http://127.0.0.1:9100/metrics
+check "Filebeat is running"                   systemctl is-active --quiet filebeat
+case "$ROLE" in
+  web|app|cicd|monitoring)
+    check "cAdvisor answers on :8081"         curl -sf -m 5 -o /dev/null http://127.0.0.1:8081/healthz ;;
 esac
 
 # --- Bonus features ------------------------------------------------------------------

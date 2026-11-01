@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # validate.sh - check the whole infrastructure against the review checklist.
 #
-#   bash scripts/validate.sh           # the 5 core VMs
+#   bash scripts/validate.sh           # the 6 core VMs (incl. monitoring-server)
 #   bash scripts/validate.sh --bonus   # + backup server, Fail2Ban, backups
 #
 # Run on your LAPTOP, in Git Bash, from the repo folder. Read-only: it changes
@@ -36,8 +36,9 @@ mapfile -t VMS < <(awk '
 
 role_of() {
   case "$1" in
-    load-balancer*) echo lb ;;  web-server*) echo web ;;  app-server*) echo app ;;
-    cicd-server*)   echo cicd ;; *)          echo backup ;;
+    load-balancer*) echo lb ;;    web-server*)        echo web ;;  app-server*) echo app ;;
+    cicd-server*)   echo cicd ;;  monitoring-server*) echo monitoring ;;
+    *)              echo backup ;;
   esac
 }
 
@@ -49,7 +50,7 @@ for line in "${VMS[@]}"; do
 done
 
 title "Infrastructure: ${#HOSTS[@]} VMs in the inventory"
-expect "at least 5 VMs defined" test "${#HOSTS[@]}" -ge 5
+expect "at least 6 VMs defined" test "${#HOSTS[@]}" -ge 6
 
 # --- 1. Checks ON each VM -------------------------------------------------------------
 for entry in "${HOSTS[@]}"; do
@@ -112,6 +113,34 @@ done
 
 code="$(curl -s -m 10 -o /dev/null -w '%{http_code}' "http://192.168.56.14:8080/login")"
 expect "Jenkins UI answers, admin laptop only (HTTP $code)" test "$code" = 200
+
+# --- 3. Monitoring and logging (Project 4) ----------------------------------------------
+MON_IP="$(awk '$1 == "monitoring-server:" { f = 1; next } f && /ansible_host:/ { print $2; exit }' ansible/inventory/hosts.yml)"
+title "Monitoring and logging ($MON_IP)"
+
+code="$(curl -s -m 10 -o /dev/null -w '%{http_code}' "http://$MON_IP:3000/login")"
+expect "Grafana UI answers (HTTP $code)" test "$code" = 200
+code="$(curl -s -m 10 -o /dev/null -w '%{http_code}' "http://$MON_IP:5601/api/status")"
+expect "Kibana UI answers (HTTP $code)" test "$code" = 200
+code="$(curl -s -m 10 -o /dev/null -w '%{http_code}' "http://$MON_IP:9090/-/ready")"
+expect "Prometheus UI answers (HTTP $code)" test "$code" = 200
+
+targets="$(curl -s -m 10 "http://$MON_IP:9090/api/v1/targets?state=active")"
+up="$(grep -o '"health":"up"' <<<"$targets" | wc -l)"
+down="$(grep -o '"health":"down"' <<<"$targets" | wc -l)"
+expect "every Prometheus target is up ($up up, $down down)" test "$up" -gt 0 -a "$down" -eq 0
+
+# Only the monitoring VM may scrape the agents, and Elasticsearch / Logstash
+# are not open to the laptop at all.
+for target in "$MON_IP:9200 Elasticsearch" "192.168.56.11:9100 Node-Exporter" "192.168.56.13:8081 cAdvisor" \
+              "$MON_IP:5044 Logstash"; do
+  read -r addr what <<<"$target"
+  if timeout 4 bash -c "</dev/tcp/${addr%%:*}/${addr##*:}" 2>/dev/null; then
+    fail "$what ($addr) is NOT reachable from this laptop"
+  else
+    pass "$what ($addr) is NOT reachable from this laptop"
+  fi
+done
 
 # --- Summary --------------------------------------------------------------------------
 echo

@@ -90,7 +90,10 @@ else {
 $minutes = [math]::Round(((Get-Date) - $started).TotalMinutes, 1)
 Write-Host ""
 Write-Host "Ready in $minutes minutes." -ForegroundColor Green
-Write-Host "  App:       http://localhost:8080   (or http://192.168.56.10)"
-Write-Host "  Jenkins:   http://192.168.56.14:8080"
+Write-Host "  App:        http://localhost:8080   (or http://192.168.56.10)"
+Write-Host "  Jenkins:    http://192.168.56.14:8080"
+Write-Host "  Grafana:    http://192.168.56.16:3000   (user admin, password in the vault)"
+Write-Host "  Kibana:     http://192.168.56.16:5601"
+Write-Host "  Prometheus: http://192.168.56.16:9090"
 $validateCmd = if ($Bonus) { "bash scripts/validate.sh --bonus" } else { "bash scripts/validate.sh" }
 Write-Host "  Validate:  $validateCmd   (in Git Bash)"

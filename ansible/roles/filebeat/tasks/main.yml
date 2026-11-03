@@ -30,13 +30,24 @@
     mode: "0644"
     state: present
 
-# Exact version pinned. Automatic security updates (unattended-upgrades) only
-# use Ubuntu's own repositories, so they never upgrade Filebeat behind our back.
+# Exact version pinned: Filebeat must match the Elasticsearch version (Elastic
+# supports matching versions only). allow_downgrade brings it back to this
+# version if a newer one was installed.
 - name: Install Filebeat {{ filebeat_version }}
   ansible.builtin.apt:
     name: "filebeat={{ filebeat_version }}"
     state: present
+    allow_downgrade: true
+    allow_change_held_packages: true
     lock_timeout: 600
+
+# "hold" = apt never upgrades it. Automatic security updates only use Ubuntu's
+# repositories, but the common role's full upgrade (apt dist-upgrade) uses ALL
+# repositories, Elastic's included - it would install the newest Filebeat.
+- name: Hold Filebeat at its version - {{ filebeat_version }}
+  ansible.builtin.dpkg_selections:
+    name: filebeat
+    selection: hold
 
 # Filebeat refuses a config file that others can write to (security check),
 # so: owned by root, mode 0600. validate = Filebeat's own syntax check.

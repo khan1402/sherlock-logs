@@ -58,6 +58,8 @@ services:
       GF_AUTH_ANONYMOUS_ENABLED: "false"       # no viewing without login
       GF_ANALYTICS_REPORTING_ENABLED: "false"  # no usage data sent to Grafana Labs
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      # No automatic download of extra plugins at start (saves RAM and time; not used).
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/etc/grafana/dashboards:ro  # dashboard JSON files

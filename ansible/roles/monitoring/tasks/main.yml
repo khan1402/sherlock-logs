@@ -97,14 +97,16 @@
     mode: "0644"
   notify: Restart grafana
 
-# Contains the Slack webhook (a secret): readable by root and by the Grafana
-# container's user only (uid/gid 472 inside the container).
+# Contains the Slack webhook (a secret): no access for other users (0640).
+# The Grafana container runs as uid 472 with group 0 (root), so it reads the
+# file through the group. (Group 472 would NOT work: Grafana gets "permission
+# denied" and stops.)
 - name: Grafana contact point and notification policy - Slack
   ansible.builtin.template:
     src: grafana/alerting/contact-points.yml.j2
     dest: "{{ monitoring_dir }}/grafana/provisioning/alerting/contact-points.yml"
     owner: root
-    group: "472"
+    group: root
     mode: "0640"
   notify: Restart grafana
 
@@ -117,8 +119,9 @@
     owner: root
     group: root
     mode: "0644"
+    # -Xms AND -Xmx: the image's default start size (1g) must not be bigger than the max.
     validate: >-
-      docker run --rm --user root -e LS_JAVA_OPTS=-Xmx256m -e XPACK_MONITORING_ENABLED=false
+      docker run --rm --user root -e "LS_JAVA_OPTS=-Xms256m -Xmx256m" -e XPACK_MONITORING_ENABLED=false
       -e SLACK_WEBHOOK_URL=https://hooks.slack.invalid/syntax-check-only
       -v %s:/tmp/logstash.conf:ro {{ monitoring_logstash_image }}
       logstash --config.test_and_exit -f /tmp/logstash.conf
@@ -153,7 +156,7 @@
     monitoring_es_health.status == 200
     and monitoring_es_health.json.status == 'green'
     and monitoring_es_health.json.number_of_nodes == 2
-  retries: 30
+  retries: 60
   delay: 5
 
 # --- Index settings: replicas + retention ------------------------------------------------
@@ -229,29 +232,30 @@
   retries: 30
   delay: 2
 
+# First start: Grafana creates its database (a few minutes on 1 vCPU).
 - name: Wait until Grafana is ready
   ansible.builtin.uri:
     url: "http://127.0.0.1:{{ monitoring_grafana_port }}/api/health"
     status_code: 200
   register: monitoring_grafana_ready
   until: monitoring_grafana_ready.status == 200
-  retries: 30
-  delay: 2
+  retries: 60  # up to 5 minutes
+  delay: 5
 
 - name: Wait until Logstash accepts logs from Filebeat
   ansible.builtin.wait_for:
     host: 127.0.0.1
     port: "{{ monitoring_logstash_beats_port }}"
-    timeout: 180
+    timeout: 600
 
-# Kibana is the slowest to start (1-3 minutes on a small VM).
+# Kibana is the slowest to start (1-3 minutes on a small VM, more on 1 vCPU).
 - name: Wait until Kibana is ready
   ansible.builtin.uri:
     url: "http://127.0.0.1:{{ monitoring_kibana_port }}/api/status"
     status_code: 200
   register: monitoring_kibana_ready
   until: monitoring_kibana_ready.status == 200
-  retries: 60
+  retries: 120
   delay: 5
 
 # --- Kibana dashboards (Group 6) ---------------------------------------------------------

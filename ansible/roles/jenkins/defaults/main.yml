@@ -7,8 +7,8 @@ jenkins_home: /var/lib/jenkins
 # Jenkins LTS needs Java 21. 'headless' = no GUI libraries (it is a server).
 jenkins_java_package: openjdk-21-jre-headless
 
-# Max Java memory. cicd-server has 3 GB and also runs Docker builds.
-jenkins_heap: 768m
+# Max Java memory. cicd-server has 2 GB and also runs Docker builds + Trivy.
+jenkins_heap: 512m
 
 # 1 vCPU -> 1 build at a time.
 jenkins_executors: 1

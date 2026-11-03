@@ -142,8 +142,9 @@ services:
       # Both nodes listed: Kibana keeps working when one of them is down.
       ELASTICSEARCH_HOSTS: '["http://localhost:{{ monitoring_es01_port }}","http://localhost:{{ monitoring_es02_port }}"]'
       TELEMETRY_OPTIN: "false"
+      NODE_OPTIONS: "--max-old-space-size={{ monitoring_kibana_node_heap_mb }}"
     mem_limit: {{ monitoring_kibana_mem_limit }}
-    
+
   # Reads the cluster health from es01 and offers it as Prometheus metrics
   # (elasticsearch_cluster_health_status{color="green|yellow|red"}).
   elasticsearch-exporter:

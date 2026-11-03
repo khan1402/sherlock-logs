@@ -42,11 +42,14 @@ monitoring_es02_port: 9201
 
 # Java heap per service. Elasticsearch: heap = half of the container limit
 # (the other half is used by the OS file cache, which makes searches fast).
-monitoring_es_heap: 1g
-monitoring_es_mem_limit: 2g
-monitoring_logstash_heap: 512m
-monitoring_logstash_mem_limit: 1g
+# Sized for a 16 GB laptop (monitoring VM = 4.5 GB) and a small amount of logs.
+# On a bigger host: ES 1g / 2g, Logstash 512m / 1g, Kibana 1024.
+monitoring_es_heap: 512m
+monitoring_es_mem_limit: 1g
+monitoring_logstash_heap: 256m
+monitoring_logstash_mem_limit: 640m
 monitoring_kibana_mem_limit: 1g
+monitoring_kibana_node_heap_mb: 512  # Kibana is Node.js: caps its JavaScript heap
 
 # Log retention: an ILM policy deletes log indices older than this.
 monitoring_logs_retention_days: 14

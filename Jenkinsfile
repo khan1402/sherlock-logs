@@ -139,11 +139,14 @@ pipeline {
             }
         }
 
-        // Project 4: keep the monitoring agents on every VM up to date. A VM that is
+        // keep the monitoring agents on every VM up to date. A VM that is
         // new in the inventory gets Node Exporter, cAdvisor and Filebeat here.
+        // Not cicd-server itself: Jenkins runs as the 'jenkins' user, which has no
+        // sudo rights there (on purpose), and a build should not restart services
+        // on its own server. cicd-server's agents come from site.yml.
         stage('Monitoring agents') {
             steps {
-                runPlaybook('monitoring-agents.yml')
+                runPlaybook('monitoring-agents.yml', '--limit all:!cicd')
             }
         }
 

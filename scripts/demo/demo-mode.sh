@@ -22,9 +22,14 @@ case "${1:-}" in
 esac
 require_vm "$CONTROL_VM"
 
-echo "Applying demo mode = $MODE on the monitoring stack (about 1 minute)..."
+echo "Applying demo mode = $MODE on the monitoring stack (about 3 minutes)..."
+# enable_bonus: if the bonus backup server exists, keep it in Prometheus' targets
+# (without the flag, the re-applied config would silently drop it).
 on_vm "$CONTROL_VM" '
   cd ~/sherlock-logs/ansible
-  ansible-playbook site.yml --tags monitoring -e "monitoring_alert_demo_mode=$1"
+  bonus=false
+  ping -c 1 -W 2 backup-server >/dev/null 2>&1 && bonus=true
+  echo "Bonus backup server present: $bonus"
+  ansible-playbook site.yml --tags monitoring -e "monitoring_alert_demo_mode=$1" -e "enable_bonus=$bonus"
 ' "$MODE"
 echo "Demo mode is now: ${1}"

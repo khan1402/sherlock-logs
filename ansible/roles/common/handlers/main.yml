@@ -1,0 +1,7 @@
+# rsyslog reads the timezone only when it starts. Without a restart it keeps
+# writing UTC times into /var/log/syslog and auth.log, while Logstash reads
+# them as local time -> every log line would land 2 hours in the past.
+- name: Restart rsyslog
+  ansible.builtin.systemd:
+    name: rsyslog
+    state: restarted

@@ -1,18 +1,19 @@
-# Run ONE backup right away (only if none exists yet), so there is proof
-# without waiting until 02:00. Called from site.yml after the sources are ready.
+# Run ONE backup right away if any server has no backup yet (first run, or a
+# server that was missing during an earlier run), so there is proof without
+# waiting until 02:00. Called from site.yml after the sources are ready.
 
-- name: Look for existing backups
+- name: Look for existing backups of each server
   ansible.builtin.find:
-    paths: "{{ backup_server_dir }}"
+    paths: "{{ backup_server_dir }}/{{ item }}"
     patterns: "*.tar.gz"
-    recurse: true
+  loop: "{{ backup_server_sources }}"
   register: backup_server_existing
 
-- name: Take the first backup now
+- name: Take a backup now (at least one server has none yet)
   ansible.builtin.systemd:
     name: backup-pull.service
     state: started
-  when: backup_server_existing.matched == 0
+  when: backup_server_existing.results | selectattr('matched', 'equalto', 0) | list | length > 0
 
 - name: Check that every server has a backup
   ansible.builtin.find:

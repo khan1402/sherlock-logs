@@ -32,19 +32,28 @@
     state: present
     lock_timeout: 600
 
-# Without this, container logs grow forever and can fill the disk.
-- name: Limit container log size
+# log-opts: without them, container logs grow forever and can fill the disk.
+# containerd-snapshotter false: Docker 29 stores images in containerd by default,
+# and cAdvisor v0.49.1 can't read that store (no container names in its metrics).
+# This keeps Docker on the classic overlay2 store that cAdvisor understands.
+- name: Configure Docker (log size limit, classic image store)
   ansible.builtin.copy:
     dest: /etc/docker/daemon.json
     content: |
       {
         "log-driver": "json-file",
-        "log-opts": { "max-size": "10m", "max-file": "3" }
+        "log-opts": { "max-size": "10m", "max-file": "3" },
+        "features": { "containerd-snapshotter": false }
       }
     owner: root
     group: root
     mode: "0644"
   notify: Restart docker
+
+# Restart Docker now, not at the end of the play, so the containers and images
+# created later in this run go into the new image store.
+- name: Apply Docker config changes now
+  ansible.builtin.meta: flush_handlers
 
 - name: Start Docker now and on every boot
   ansible.builtin.service:

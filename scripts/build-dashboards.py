@@ -395,8 +395,9 @@ over_time("sys-volume", "System logs over time, per VM", "system-logs", "agent.n
           desc="Log lines per VM. A sudden spike usually means something is wrong on that VM.")
 kibana_table("sys-programs", "Top programs writing system logs", "system-logs", ["system.program"])
 kibana_table("sys-failed-logins", "Failed SSH logins per VM", "system-logs", ["agent.name"],
-             query='log_type:"auth" and system.message:"Failed password"',
-             desc="Someone tried a wrong password or an unknown user.")
+             query='log_type:"auth" and system.message:("Failed password" or "Invalid user")',
+             desc="Someone tried an unknown user or a wrong password. "
+                  "Password login is off, so most attempts show up as 'Invalid user'.")
 search("sys-search", "System logs - all VMs", "system-logs",
        ["agent.name", "log_type", "system.program", "system.message"])
 kibana_dashboard("sherlock-system-logs", "System Logs",

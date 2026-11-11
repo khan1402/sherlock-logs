@@ -6,8 +6,8 @@
 # Switches off the VM's private network interface - the one with its project
 # IP - and switches it on again AUTOMATICALLY after the given time. (Plain
 # 'ifconfig eth0 down' would also cut our own SSH session, and nobody could
-# switch it back on.) The restore runs detached on the VM, so it happens even
-# though this SSH connection is cut.
+# switch it back on.) The restore runs as a systemd service on the VM, so it
+# happens even though this SSH connection is cut.
 # Expected: "VM unreachable" after about 1 minute, "Resolved" after the restore.
 
 # The scripts below in single quotes run ON the VM, so their $variables must
@@ -28,8 +28,10 @@ on_vm "$VM" '
   iface=$(ip -o -4 addr show | awk -v ip="$ip_addr" "index(\$4, ip\"/\") == 1 {print \$2}")
   [[ -n "$iface" ]] || { echo "No interface with $ip_addr found"; exit 1; }
   sudo -v   # ask for the sudo password now, while the network is still up
-  sudo setsid nohup bash -c "sleep 2; ip link set $iface down; sleep $seconds; ip link set $iface up" \
-    >/dev/null 2>&1 < /dev/null &
+  # systemd-run starts the job as a system service, outside this SSH session.
+  # (A background job with nohup was killed when the SSH session closed.)
+  sudo systemd-run --quiet --collect --unit="demo-vm-down-$$" \
+    bash -c "sleep 2; ip link set $iface down; sleep $seconds; ip link set $iface up"
   echo "$(hostname): $iface ($ip_addr) goes DOWN in 2 s and comes back by itself after $seconds s"
 ' "$(ip_of "$VM")" "$SECONDS_DOWN"
 echo "Expected: 'VM unreachable' for $VM after ~1 min, then 'Resolved' about ${SECONDS_DOWN} s from now."

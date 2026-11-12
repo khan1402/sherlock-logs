@@ -74,7 +74,7 @@
     {
       "type": "stat",
       "title": "Restarts (last 15 min)",
-      "description": "Each restart changes the container's start time. Alert: more than 3 for one container in 15 minutes.",
+      "description": "Each restart starts a new CPU counter at 0; resets() counts those drops. Alert: more than 3 for one container in 15 minutes.",
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "gridPos": {"x": 6, "y": 1, "w": 6, "h": 4},
       "fieldConfig": {
@@ -91,7 +91,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(changes(container_start_time_seconds{name!=\"\",instance=~\"$instance\",name=~\"$container\"}[15m])) or vector(0)",
+          "expr": "sum(resets(container_cpu_usage_seconds_total{name!=\"\",instance=~\"$instance\",name=~\"$container\"}[15m])) or vector(0)",
           "legendFormat": "",
           "instant": true
         }
@@ -146,7 +146,7 @@
     {
       "type": "table",
       "title": "Container status",
-      "description": "Uptime (seconds since start) and restarts in the last hour, per container.",
+      "description": "Age (seconds since the container was created) and restarts in the last hour, per container.",
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "gridPos": {"x": 0, "y": 5, "w": 24, "h": 8},
       "fieldConfig": {"defaults": {}, "overrides": []},
@@ -160,7 +160,7 @@
         },
         {
           "refId": "B",
-          "expr": "max by (instance, name, image) (changes(container_start_time_seconds{name!=\"\",instance=~\"$instance\",name=~\"$container\"}[1h]))",
+          "expr": "max by (instance, name, image) (resets(container_cpu_usage_seconds_total{name!=\"\",instance=~\"$instance\",name=~\"$container\"}[1h]))",
           "format": "table",
           "instant": true
         }
@@ -253,7 +253,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "changes(container_start_time_seconds{name!=\"\",instance=~\"$instance\",name=~\"$container\"}[15m])",
+          "expr": "resets(container_cpu_usage_seconds_total{name!=\"\",instance=~\"$instance\",name=~\"$container\"}[15m])",
           "legendFormat": "{{instance}} / {{name}}"
         }
       ],

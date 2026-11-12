@@ -125,10 +125,12 @@ monitoring_alert_rules:
     description: "Memory usage is %value%% (threshold 90%, sustained)."
 
   # ===== Required: Docker =====
-  # Every restart gives the container a new start time; changes() counts them.
+  # A restart (--restart=always) keeps the same container, so its start-time
+  # metric (= creation time) never changes. But every restart begins a new CPU
+  # counter at 0, and resets() counts those drops = the number of restarts.
   - uid: container-restarts
     title: Container restarting
-    expr: changes(container_start_time_seconds{name!=""}[15m])
+    expr: resets(container_cpu_usage_seconds_total{name!=""}[15m])
     op: gt
     threshold: 3
     for: 0s

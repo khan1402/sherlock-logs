@@ -5,8 +5,8 @@
 #   bash scripts/demo/container-restarts.sh <vm> stop   remove the container
 #
 # The container exits with an error after 10 s and Docker restarts it
-# (--restart=always), again and again. Each restart gives it a new start time,
-# which cAdvisor reports and the alert counts.
+# (--restart=always), again and again. Each restart begins a new CPU counter
+# at 0 in cAdvisor, and the alert counts those resets.
 # Expected: "Container restarting" (test_container) within about a minute.
 
 # The scripts below in single quotes run ON the VM, so their $variables must

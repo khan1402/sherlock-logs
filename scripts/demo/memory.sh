@@ -28,7 +28,12 @@ on_vm "$VM" '
   avail_kb=$(awk "/MemAvailable/ {print \$2}" /proc/meminfo)
   total_kb=$(awk "/MemTotal/ {print \$2}" /proc/meminfo)
   bytes=$(( (avail_kb - total_kb * 5 / 100) * 1024 ))
-  nohup stress-ng --vm 1 --vm-bytes "$bytes" --vm-keep --timeout "$1s" >/dev/null 2>&1 &
+  # systemd-run starts the load as a service, outside this SSH session.
+  # (A background job with nohup stopped as soon as the SSH session closed.)
+  # --temp-path /tmp: a service starts in "/", where stress-ng may not write.
+  sudo -v
+  sudo systemd-run --quiet --collect --uid="$(id -un)" --unit="demo-memory-$$" \
+    stress-ng --vm 1 --vm-bytes "$bytes" --vm-keep --timeout "$1s" --temp-path /tmp
   echo "Memory load started on $(hostname): $(( bytes / 1024 / 1024 )) MB for $1 s (target ~95% used)"
 ' "$ARG"
 echo "Expected: 'High memory usage' on $VM after 5 min (1 min in demo mode)."

@@ -181,6 +181,7 @@ vm = dashboard(
 
 # --- Docker containers
 C = 'name!="",instance=~"$instance",name=~"$container"'
+NOJVM = 'name!~"es0[0-9]|logstash"'  # Java services: always near their memory limit by design
 docker = dashboard(
     "docker-containers", "Docker Containers",
     "Container metrics from cAdvisor on every Docker VM: health, CPU, memory, restarts.",
@@ -196,9 +197,11 @@ docker = dashboard(
         stat("cAdvisor targets up", 'sum(up{job="cadvisor"})', "none", 12, 1,
              desc="Docker VMs whose container metrics Prometheus receives."),
         stat("Highest memory vs limit",
-             f'max(container_memory_working_set_bytes{{{C}}} / (container_spec_memory_limit_bytes{{{C}}} > 0)) * 100 '
+             f'max(container_memory_working_set_bytes{{{C},{NOJVM}}} '
+             f'/ (container_spec_memory_limit_bytes{{{C},{NOJVM}}} > 0)) * 100 '
              f'or vector(0)', "percent", 18, 1,
-             desc="The container closest to its memory limit. Alert: above 80%. Only containers WITH a limit count.",
+             desc="The container closest to its memory limit (same containers as the alert). Alert: above 80%. "
+                  "Only containers WITH a limit count; es01, es02 and logstash always sit near theirs (Java heap).",
              thresholds=steps(70, 80)),
         table("Container status",
               [f'time() - max by (instance, name, image) (container_start_time_seconds{{{C}}})',

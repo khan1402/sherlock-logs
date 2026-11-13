@@ -139,9 +139,14 @@ monitoring_alert_rules:
     description: "%value% restarts in the last 15 minutes (threshold 3)."
 
   # Only containers WITH a memory limit (limit > 0) are checked.
+  # Not es01, es02, logstash: Java reserves its whole heap at start and
+  # Elasticsearch keeps index files in memory, so they ALWAYS sit near their
+  # limit - by design, not a problem. Their health has its own alerts below.
   - uid: container-memory-high
     title: Container near its memory limit
-    expr: 100 * container_memory_working_set_bytes{name!=""} / (container_spec_memory_limit_bytes{name!=""} > 0)
+    expr: >-
+      100 * container_memory_working_set_bytes{name!="",name!~"es0[0-9]|logstash"}
+      / (container_spec_memory_limit_bytes{name!="",name!~"es0[0-9]|logstash"} > 0)
     op: gt
     threshold: 80
     for: 1m

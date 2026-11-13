@@ -115,7 +115,7 @@
     {
       "type": "stat",
       "title": "Highest memory vs limit",
-      "description": "The container closest to its memory limit. Alert: above 80%. Only containers WITH a limit count.",
+      "description": "The container closest to its memory limit (same containers as the alert). Alert: above 80%. Only containers WITH a limit count; es01, es02 and logstash always sit near theirs (Java heap).",
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "gridPos": {"x": 18, "y": 1, "w": 6, "h": 4},
       "fieldConfig": {
@@ -136,7 +136,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "max(container_memory_working_set_bytes{name!=\"\",instance=~\"$instance\",name=~\"$container\"} / (container_spec_memory_limit_bytes{name!=\"\",instance=~\"$instance\",name=~\"$container\"} > 0)) * 100 or vector(0)",
+          "expr": "max(container_memory_working_set_bytes{name!=\"\",instance=~\"$instance\",name=~\"$container\",name!~\"es0[0-9]|logstash\"} / (container_spec_memory_limit_bytes{name!=\"\",instance=~\"$instance\",name=~\"$container\",name!~\"es0[0-9]|logstash\"} > 0)) * 100 or vector(0)",
           "legendFormat": "",
           "instant": true
         }
